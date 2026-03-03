@@ -1,0 +1,52 @@
+﻿<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ANECAMM | Directorio</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="icon" type="image/jpeg" href="../assets/images/Logo.jpg" />
+  <link rel="shortcut icon" href="../assets/images/Logo.jpg" />
+  <link rel="stylesheet" href="../css/styles.css" />
+</head>
+<body>
+    <div id="siteHeader"></div>
+
+  <main class="site-main">
+    <section id="directorio" class="panel">
+      <div class="directory-head">
+        <div>
+          <p class="tag">Base de clubes</p>
+          <h3>Directorio de Miembros ANECAMM</h3>
+        </div>
+        <button id="clearData" class="btn ghost" type="button">Limpiar demo</button>
+      </div>
+      <div class="directory-tools">
+        <input id="directorySearch" type="search" placeholder="Buscar por club, ciudad, instructor..." />
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Club</th>
+              <th>Dirección</th>
+              <th>Instructor</th>
+              <th>Teléfono</th>
+              <th>Red social</th>
+              <th>Estatus</th>
+            </tr>
+          </thead>
+          <tbody id="directoryBody"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+    <div id="siteFooter"></div>
+
+    <script src="../js/layout.js"></script>
+  <script src="../js/app.js"></script>
+</body>
+</html>

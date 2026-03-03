@@ -1,0 +1,32 @@
+﻿# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+logs/
+
+# Binaries / installers
+*.exe
+*.msi
+*.zip
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Node (future backend/frontend tooling)
+node_modules/
+npm-debug.log*
+yarn-error.log*
+
+# Build outputs
+dist/
+build/
+coverage/
