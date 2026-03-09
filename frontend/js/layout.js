@@ -16,6 +16,8 @@ const buildHeader = (currentPage) => `
       <a href="./afiliaciones.html" class="${currentPage === "afiliaciones.html" ? "active" : ""}">Afiliaciones</a>
       <a href="./directorio.html" class="${currentPage === "directorio.html" ? "active" : ""}">Directorio</a>
       <a href="./index.html#contacto" class="${currentPage === "index.html" ? "active" : ""}">Contacto</a>
+      <a href="./index.html#noticias" class="${currentPage === "index.html" ? "active" : ""}">Galeria</a>
+      <a href="./eventos.html#eventos" class="${currentPage === "eventos.html" ? "active" : ""}">Eventos</a>
     </nav>
   </header>
 `;

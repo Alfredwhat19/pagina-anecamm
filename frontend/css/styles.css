@@ -190,6 +190,42 @@ h4 {
   gap: 0.7rem;
 }
 
+.hero-cover-carousel {
+  margin-top: 0;
+  position: relative;
+}
+
+.hero-cover-carousel .carousel-slide {
+  flex: 0 0 100%;
+}
+
+.hero-cover-carousel .carousel-viewport {
+  border-radius: var(--radius-sm);
+}
+
+.hero-cover-carousel .carousel-slide img {
+  min-height: 280px;
+  max-height: 410px;
+  aspect-ratio: auto;
+}
+
+.hero-cover-carousel .carousel-btn {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 3;
+  background: rgba(17, 20, 26, 0.78);
+  backdrop-filter: blur(2px);
+}
+
+.hero-cover-carousel .carousel-btn.prev {
+  left: 0.6rem;
+}
+
+.hero-cover-carousel .carousel-btn.next {
+  right: 0.6rem;
+}
+
 .hero-media > img {
   width: 100%;
   height: 100%;
@@ -262,7 +298,8 @@ h4 {
   background: linear-gradient(160deg, rgba(255, 255, 255, 0.99), rgba(245, 248, 250, 0.97));
 }
 
-.member-carousel {
+.member-carousel,
+.gallery-carousel {
   margin-top: 0.9rem;
   display: flex;
   align-items: center;
@@ -364,6 +401,36 @@ h4 {
 
 .special-card div {
   padding: 0.82rem;
+}
+
+.event-highlight {
+  display: grid;
+  grid-template-columns: 1.15fr 1fr;
+  gap: 0.9rem;
+  margin-top: 0.65rem;
+  align-items: stretch;
+}
+
+.event-highlight img {
+  width: 100%;
+  height: 100%;
+  min-height: 260px;
+  max-height: 440px;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
+}
+
+.event-copy {
+  background: var(--surface-soft);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 0.95rem;
+}
+
+.event-copy p {
+  margin: 0.45rem 0 0;
+  color: var(--ink-700);
 }
 
 .social-layout {
@@ -607,6 +674,7 @@ a {
   .special-grid,
   .special-card,
   .afiliacion-layout,
+  .event-highlight,
   .form-grid,
   .pay-box,
   .contact-inline {

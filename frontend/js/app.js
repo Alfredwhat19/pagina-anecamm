@@ -4,8 +4,7 @@ const directoryBody = document.getElementById("directoryBody");
 const statusMsg = document.getElementById("statusMsg");
 const clearBtn = document.getElementById("clearData");
 const directorySearch = document.getElementById("directorySearch");
-const memberCarousel = document.getElementById("memberCarousel");
-const carouselDots = document.getElementById("carouselDots");
+const carousels = Array.from(document.querySelectorAll(".js-carousel"));
 const nav = document.getElementById("mainNav");
 const menuToggle = document.getElementById("menuToggle");
 
@@ -154,13 +153,15 @@ if (directorySearch) {
   });
 }
 
-const initMembersCarousel = () => {
-  if (!memberCarousel) return;
+const initCarousel = (carouselRoot) => {
+  if (!carouselRoot) return;
 
-  const track = memberCarousel.querySelector(".carousel-track");
-  const slides = Array.from(memberCarousel.querySelectorAll(".carousel-slide"));
-  const prevBtn = memberCarousel.querySelector(".carousel-btn.prev");
-  const nextBtn = memberCarousel.querySelector(".carousel-btn.next");
+  const track = carouselRoot.querySelector(".carousel-track");
+  const slides = Array.from(carouselRoot.querySelectorAll(".carousel-slide"));
+  const prevBtn = carouselRoot.querySelector(".carousel-btn.prev");
+  const nextBtn = carouselRoot.querySelector(".carousel-btn.next");
+  const dotsId = `${carouselRoot.id}Dots`;
+  const dotsRoot = document.getElementById(dotsId);
   if (!track || !slides.length || !prevBtn || !nextBtn) return;
 
   let index = 0;
@@ -168,10 +169,18 @@ const initMembersCarousel = () => {
   let touchStartX = 0;
   let touchEndX = 0;
 
+  const getVisible = (breakpoint) => {
+    const value = Number.parseInt(carouselRoot.dataset[breakpoint], 10);
+    return Number.isInteger(value) && value > 0 ? value : null;
+  };
+
   const visibleCount = () => {
-    if (window.matchMedia("(max-width: 560px)").matches) return 1;
-    if (window.matchMedia("(max-width: 980px)").matches) return 2;
-    return 3;
+    const mobile = getVisible("visibleMobile") || 1;
+    const tablet = getVisible("visibleTablet") || 2;
+    const desktop = getVisible("visibleDesktop") || 3;
+    if (window.matchMedia("(max-width: 560px)").matches) return mobile;
+    if (window.matchMedia("(max-width: 980px)").matches) return tablet;
+    return desktop;
   };
 
   const slideWidth = () => {
@@ -183,21 +192,21 @@ const initMembersCarousel = () => {
   const maxIndex = () => Math.max(0, slides.length - visibleCount());
 
   const buildDots = () => {
-    if (!carouselDots) return;
+    if (!dotsRoot) return;
     const pages = maxIndex() + 1;
-    carouselDots.innerHTML = "";
+    dotsRoot.innerHTML = "";
     for (let i = 0; i < pages; i += 1) {
       const dot = document.createElement("button");
       dot.type = "button";
       dot.setAttribute("aria-label", `Ir a grupo ${i + 1}`);
       dot.addEventListener("click", () => moveTo(i));
-      carouselDots.appendChild(dot);
+      dotsRoot.appendChild(dot);
     }
   };
 
   const paintDots = () => {
-    if (!carouselDots) return;
-    const dots = Array.from(carouselDots.querySelectorAll("button"));
+    if (!dotsRoot) return;
+    const dots = Array.from(dotsRoot.querySelectorAll("button"));
     dots.forEach((dot, i) => dot.classList.toggle("active", i === index));
   };
 
@@ -225,14 +234,14 @@ const initMembersCarousel = () => {
   nextBtn.addEventListener("click", next);
   prevBtn.addEventListener("click", prev);
 
-  memberCarousel.addEventListener("mouseenter", stopAutoplay);
-  memberCarousel.addEventListener("mouseleave", startAutoplay);
+  carouselRoot.addEventListener("mouseenter", stopAutoplay);
+  carouselRoot.addEventListener("mouseleave", startAutoplay);
 
-  memberCarousel.addEventListener("touchstart", (event) => {
+  carouselRoot.addEventListener("touchstart", (event) => {
     touchStartX = event.changedTouches[0].clientX;
   });
 
-  memberCarousel.addEventListener("touchend", (event) => {
+  carouselRoot.addEventListener("touchend", (event) => {
     touchEndX = event.changedTouches[0].clientX;
     const delta = touchStartX - touchEndX;
     if (Math.abs(delta) < 30) return;
@@ -248,6 +257,11 @@ const initMembersCarousel = () => {
   buildDots();
   moveTo(0);
   startAutoplay();
+};
+
+const initCarousels = () => {
+  if (!carousels.length) return;
+  carousels.forEach((carouselRoot) => initCarousel(carouselRoot));
 };
 
 const initMenu = () => {
@@ -312,6 +326,6 @@ const initActiveNav = () => {
 };
 
 renderDirectory();
-initMembersCarousel();
+initCarousels();
 initMenu();
 initActiveNav();
