@@ -20,6 +20,10 @@ const buildHeader = (currentPage) => `
       <a href="./eventos.html#eventos" class="${currentPage === "eventos.html" ? "active" : ""}">Eventos</a>
     </nav>
   </header>
+  <div class="wmo-strip">
+    <p>Miembro de <span>World Muaythai Organization</span> Tailandia</p>
+    <img src="../assets/images/WMO.jpg" alt="Logo World Muaythai Organization" class="wmo-logo" />
+  </div>
 `;
 
 const buildFooter = () => `
