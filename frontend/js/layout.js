@@ -13,7 +13,7 @@ const buildHeader = (currentPage) => `
     <nav id="mainNav" class="main-nav" aria-label="Navegacion principal">
       <a href="./index.html#inicio" class="${currentPage === "index.html" ? "active" : ""}">Inicio</a>
       <a href="./index.html#galeria" class="${currentPage === "index.html" ? "active" : ""}">Miembros</a>
-      <a href="./afiliaciones.html" class="${currentPage === "afiliaciones.html" ? "active" : ""}">Afiliaciones</a>
+      <a href="./afiliaciones-no-disponible.html" class="${["afiliaciones.html", "afiliaciones-no-disponible.html"].includes(currentPage) ? "active" : ""}">Afiliaciones</a>
       <a href="./directorio.html" class="${currentPage === "directorio.html" ? "active" : ""}">Directorio</a>
       <a href="./index.html#contacto" class="${currentPage === "index.html" ? "active" : ""}">Contacto</a>
       <a href="./index.html#noticias" class="${currentPage === "index.html" ? "active" : ""}">Galeria</a>
