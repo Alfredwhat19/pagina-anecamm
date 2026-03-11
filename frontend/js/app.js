@@ -9,6 +9,7 @@ const nav = document.getElementById("mainNav");
 const menuToggle = document.getElementById("menuToggle");
 
 let directoryQuery = "";
+let directoryData = [];
 
 const getClubs = () => {
   try {
@@ -32,16 +33,16 @@ const showStatus = (message, isError = false) => {
 };
 
 const rowTemplate = (club) => {
-  const red = club.redSocial
-    ? `<a href="${club.redSocial}" target="_blank" rel="noreferrer">Ver perfil</a>`
+  const red = club.red_social
+    ? `<a href="${club.red_social}" target="_blank" rel="noreferrer">Ver perfil</a>`
     : "-";
 
   return `
     <tr>
-      <td>${club.club}</td>
-      <td>${club.direccion}<br>${club.ciudadEstado}</td>
+      <td>${club.nombre_club}</td>
+      <td>${club.ciudad_estado}</td>
       <td>${club.instructor}</td>
-      <td>${club.telefono}</td>
+      <td>-</td>
       <td>${red}</td>
       <td>${club.estatus}</td>
     </tr>
@@ -54,12 +55,10 @@ const filterClubs = (clubs, query) => {
 
   return clubs.filter((club) => {
     const searchable = [
-      club.club,
-      club.direccion,
-      club.ciudadEstado,
+      club.nombre_club,
+      club.ciudad_estado,
       club.instructor,
-      club.telefono,
-      club.redSocial,
+      club.red_social,
       club.estatus,
     ]
       .join(" ")
@@ -72,7 +71,7 @@ const filterClubs = (clubs, query) => {
 const renderDirectory = () => {
   if (!directoryBody) return;
 
-  const clubs = filterClubs(getClubs(), directoryQuery);
+  const clubs = filterClubs(directoryData, directoryQuery);
   if (!clubs.length) {
     directoryBody.innerHTML = `
       <tr>
@@ -84,6 +83,27 @@ const renderDirectory = () => {
 
   directoryBody.innerHTML = clubs.map(rowTemplate).join("");
 };
+
+async function cargarDirectorio() {
+  if (!directoryBody) return;
+
+  try {
+    const response = await fetch("/api/directorio");
+    if (!response.ok) {
+      throw new Error(`Error ${response.status}`);
+    }
+
+    directoryData = await response.json();
+    renderDirectory();
+  } catch (error) {
+    directoryBody.innerHTML = `
+      <tr>
+        <td colspan="6">No se pudo cargar el directorio.</td>
+      </tr>
+    `;
+    console.error(error);
+  }
+}
 
 const validatePayment = (data) => {
   const cardDigits = data.tarjeta.replace(/\D/g, "");
@@ -325,7 +345,9 @@ const initActiveNav = () => {
   sections.forEach((section) => observer.observe(section));
 };
 
-renderDirectory();
-initCarousels();
-initMenu();
-initActiveNav();
+document.addEventListener("DOMContentLoaded", () => {
+  cargarDirectorio();
+  initCarousels();
+  initMenu();
+  initActiveNav();
+});
