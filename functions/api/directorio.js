@@ -11,6 +11,7 @@ export async function onRequestGet(context) {
         red_social,
         estatus
       FROM directorio_clubes
+      WHERE visible_in_directory = 1
       ORDER BY nombre_club ASC`
     ).all();
 
