@@ -7,24 +7,11 @@ const directorySearch = document.getElementById("directorySearch");
 const carousels = Array.from(document.querySelectorAll(".js-carousel"));
 const nav = document.getElementById("mainNav");
 const menuToggle = document.getElementById("menuToggle");
+const checkoutLink = form?.querySelector('a.btn[href]');
 
 let directoryQuery = "";
 let directoryData = [];
-
-const getClubs = () => {
-  try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY)) || [];
-  } catch {
-    return [];
-  }
-};
-
-const saveClubs = (clubs) => localStorage.setItem(STORAGE_KEY, JSON.stringify(clubs));
-
-const maskCard = (card) => {
-  const clean = (card || "").replace(/\D/g, "");
-  return clean.length >= 4 ? `**** **** **** ${clean.slice(-4)}` : "****";
-};
+let isSubmittingCheckout = false;
 
 const showStatus = (message, isError = false) => {
   if (!statusMsg) return;
@@ -105,64 +92,79 @@ async function cargarDirectorio() {
   }
 }
 
-const validatePayment = (data) => {
-  const cardDigits = data.tarjeta.replace(/\D/g, "");
-  if (cardDigits.length < 16) {
-    return "El numero de tarjeta debe tener al menos 16 digitos.";
+const showCheckoutStateFromUrl = () => {
+  if (!statusMsg) return;
+
+  const params = new URLSearchParams(window.location.search);
+
+  if (params.get("success") === "true") {
+    showStatus("Pago confirmado. Tu afiliacion sera visible al confirmarse el webhook.");
   }
-  if (!/^(0[1-9]|1[0-2])\/[0-9]{2}$/.test(data.vencimiento)) {
-    return "La vigencia debe tener formato MM/AA.";
+
+  if (params.get("cancel") === "true") {
+    showStatus("Pago cancelado. Puedes intentarlo nuevamente.", true);
   }
-  if (!/^\d{3,4}$/.test(data.cvv)) {
-    return "El CVV debe tener 3 o 4 digitos.";
+};
+
+const createCheckoutSession = async () => {
+  if (!form || isSubmittingCheckout) return;
+
+  const fd = new FormData(form);
+  const payload = {
+    nombre_club: (fd.get("club") || "").toString().trim(),
+    direccion: (fd.get("direccion") || "").toString().trim(),
+    ciudad_estado: (fd.get("ciudadEstado") || "").toString().trim(),
+    instructor: (fd.get("instructor") || "").toString().trim(),
+    red_social: (fd.get("redSocial") || "").toString().trim(),
+  };
+
+  if (!payload.nombre_club || !payload.direccion || !payload.ciudad_estado || !payload.instructor) {
+    showStatus("Completa los datos obligatorios del club.", true);
+    return;
   }
-  return null;
+
+  isSubmittingCheckout = true;
+  showStatus("Redirigiendo a Stripe...");
+
+  try {
+    const response = await fetch("/api/create-checkout-session", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    });
+
+    const result = await response.json();
+    if (!response.ok || !result?.ok || !result?.checkoutUrl) {
+      throw new Error(result?.error || `Error ${response.status}`);
+    }
+
+    window.location = result.checkoutUrl;
+  } catch (error) {
+    console.error(error);
+    showStatus("No se pudo iniciar el pago. Intenta de nuevo.", true);
+    isSubmittingCheckout = false;
+  }
 };
 
 if (form) {
   form.addEventListener("submit", (event) => {
     event.preventDefault();
-    showStatus("Procesando pago...");
+    createCheckoutSession();
+  });
+}
 
-    const fd = new FormData(form);
-    const data = Object.fromEntries(fd.entries());
-
-    const paymentError = validatePayment(data);
-    if (paymentError) {
-      showStatus(paymentError, true);
-      return;
-    }
-
-    setTimeout(() => {
-      const newClub = {
-        club: data.club.trim(),
-        direccion: data.direccion.trim(),
-        ciudadEstado: data.ciudadEstado.trim(),
-        telefono: data.telefono.trim(),
-        instructor: data.instructor.trim(),
-        redSocial: data.redSocial.trim(),
-        logo: data.logo.trim(),
-        foto: data.foto.trim(),
-        estatus: `Afiliado y pagado (${maskCard(data.tarjeta)})`,
-        fechaAfiliacion: new Date().toISOString(),
-      };
-
-      const clubs = getClubs();
-      clubs.unshift(newClub);
-      saveClubs(clubs);
-      renderDirectory();
-
-      form.reset();
-      showStatus("Pago aprobado. El club fue agregado al directorio.");
-    }, 900);
+if (checkoutLink) {
+  checkoutLink.addEventListener("click", (event) => {
+    event.preventDefault();
+    createCheckoutSession();
   });
 }
 
 if (clearBtn) {
   clearBtn.addEventListener("click", () => {
-    localStorage.removeItem(STORAGE_KEY);
-    renderDirectory();
-    showStatus("Datos de demostracion eliminados.");
+    showStatus("La demo local ya no se utiliza en esta version.");
   });
 }
 
@@ -346,6 +348,7 @@ const initActiveNav = () => {
 };
 
 document.addEventListener("DOMContentLoaded", () => {
+  showCheckoutStateFromUrl();
   cargarDirectorio();
   initCarousels();
   initMenu();
