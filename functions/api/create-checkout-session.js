@@ -3,6 +3,15 @@ const SUCCESS_URL =
   "https://www.anecamm.com/frontend/html/afiliaciones.html?success=true";
 const CANCEL_URL =
   "https://www.anecamm.com/frontend/html/afiliaciones.html?cancel=true";
+const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024;
+const ALLOWED_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
+
+class HttpError extends Error {
+  constructor(message, status = 500) {
+    super(message);
+    this.status = status;
+  }
+}
 
 const json = (body, init = {}) =>
   new Response(JSON.stringify(body), {
@@ -53,7 +62,21 @@ const buildTempKey = (suffix, extension) => {
 
 const assertImageFile = (file, fieldName) => {
   if (!(file instanceof File) || !file.name || file.size <= 0) {
-    throw new Error(`El archivo ${fieldName} es obligatorio.`);
+    throw new HttpError(`El archivo ${fieldName} es obligatorio.`, 400);
+  }
+
+  if (file.size > MAX_FILE_SIZE_BYTES) {
+    throw new HttpError(
+      `El archivo ${fieldName} excede el tamaño maximo permitido de 5 MB.`,
+      400
+    );
+  }
+
+  if (!ALLOWED_MIME_TYPES.has(file.type)) {
+    throw new HttpError(
+      `El archivo ${fieldName} debe ser JPG, PNG o WEBP.`,
+      400
+    );
   }
 };
 
@@ -75,6 +98,39 @@ const uploadTempImage = async (bucket, file, suffix) => {
   return key;
 };
 
+const deleteTempImage = async (bucket, key) => {
+  if (!key) return;
+  await bucket.delete(key);
+};
+
+const cleanupTempImages = async (bucket, keys) => {
+  const cleanupTasks = keys.filter(Boolean).map((key) => deleteTempImage(bucket, key));
+  const results = await Promise.allSettled(cleanupTasks);
+
+  results.forEach((result) => {
+    if (result.status === "rejected") {
+      console.error("Error limpiando imagen temporal:", result.reason);
+    }
+  });
+};
+
+const deletePendingClub = async (db, clubId) => {
+  if (!clubId) return;
+
+  try {
+    await db.prepare(
+      `DELETE FROM directorio_clubes
+       WHERE id = ? AND payment_status = 'pending'`
+    )
+      .bind(clubId)
+      .run();
+  } catch (error) {
+    console.error("Error eliminando registro pendiente:", error);
+  }
+};
+
+const getChangedRows = (result) => Number(result?.meta?.changes || 0);
+
 const createStripeCheckoutSession = async (secretKey, club) => {
   const body = new URLSearchParams({
     mode: "payment",
@@ -86,6 +142,8 @@ const createStripeCheckoutSession = async (secretKey, club) => {
     "line_items[0][price_data][unit_amount]": "150000",
     "line_items[0][quantity]": "1",
     "metadata[nombre_club]": club.nombre_club,
+    "metadata[club_id]": String(club.id),
+    client_reference_id: String(club.id),
   });
 
   const response = await fetch(STRIPE_API_URL, {
@@ -107,6 +165,8 @@ const createStripeCheckoutSession = async (secretKey, club) => {
 
 export async function onRequestPost(context) {
   const { env, request } = context;
+  let clubId = null;
+  const uploadedKeys = [];
 
   if (!env?.DB) {
     return json({ ok: false, error: "DB binding no configurado." }, { status: 500 });
@@ -129,10 +189,7 @@ export async function onRequestPost(context) {
   try {
     const contentType = request.headers.get("content-type") || "";
     if (!contentType.toLowerCase().includes("multipart/form-data")) {
-      return json(
-        { ok: false, error: "Content-Type invalido. Usa multipart/form-data." },
-        { status: 400 }
-      );
+      throw new HttpError("Content-Type invalido. Usa multipart/form-data.", 400);
     }
 
     const formData = await request.formData();
@@ -150,10 +207,11 @@ export async function onRequestPost(context) {
       red_social: normalizeField(formData.get("red_social")),
     };
 
-    const [tempLogoKey, tempGroupKey] = await Promise.all([
-      uploadTempImage(env.TEMP_IMAGES, logoFile, "logo"),
-      uploadTempImage(env.TEMP_IMAGES, groupFile, "grupo"),
-    ]);
+    const tempLogoKey = await uploadTempImage(env.TEMP_IMAGES, logoFile, "logo");
+    uploadedKeys.push(tempLogoKey);
+
+    const tempGroupKey = await uploadTempImage(env.TEMP_IMAGES, groupFile, "grupo");
+    uploadedKeys.push(tempGroupKey);
 
     const insertResult = await env.DB.prepare(
       `INSERT INTO directorio_clubes(
@@ -181,14 +239,17 @@ export async function onRequestPost(context) {
       )
       .run();
 
-    const clubId = insertResult?.meta?.last_row_id;
+    clubId = insertResult?.meta?.last_row_id;
     if (!clubId) {
       throw new Error("No se pudo registrar el club pendiente.");
     }
 
-    const session = await createStripeCheckoutSession(env.STRIPE_SECRET_KEY, club);
+    const session = await createStripeCheckoutSession(env.STRIPE_SECRET_KEY, {
+      ...club,
+      id: clubId,
+    });
 
-    await env.DB.prepare(
+    const updateResult = await env.DB.prepare(
       `UPDATE directorio_clubes
       SET stripe_session_id = ?
       WHERE id = ?`
@@ -196,16 +257,27 @@ export async function onRequestPost(context) {
       .bind(session.id, clubId)
       .run();
 
+    if (getChangedRows(updateResult) !== 1) {
+      await cleanupTempImages(env.TEMP_IMAGES, uploadedKeys);
+      await deletePendingClub(env.DB, clubId);
+      throw new Error("No se pudo guardar stripe_session_id para el club.");
+    }
+
     return json({
       ok: true,
       checkoutUrl: session.url,
       id: clubId,
     });
   } catch (error) {
-    const status =
-      error instanceof TypeError || error.message === "Campos requeridos incompletos."
-        ? 400
-        : 500;
+    if (uploadedKeys.length) {
+      await cleanupTempImages(env.TEMP_IMAGES, uploadedKeys);
+    }
+
+    if (clubId) {
+      await deletePendingClub(env.DB, clubId);
+    }
+
+    const status = error instanceof HttpError || error instanceof TypeError ? error.status || 400 : 500;
 
     return json(
       {

@@ -1,5 +1,12 @@
 const FIVE_MINUTES_IN_SECONDS = 300;
 
+class HttpError extends Error {
+  constructor(message, status = 500) {
+    super(message);
+    this.status = status;
+  }
+}
+
 const json = (body, init = {}) =>
   new Response(JSON.stringify(body), {
     headers: {
@@ -48,19 +55,19 @@ const secureCompare = (a, b) => {
 
 const verifyStripeSignature = async (rawBody, signatureHeader, webhookSecret) => {
   if (!signatureHeader) {
-    throw new Error("Falta la firma de Stripe.");
+    throw new HttpError("Falta la firma de Stripe.", 400);
   }
 
   const { t, v1 } = parseStripeSignature(signatureHeader);
   if (!t || !v1) {
-    throw new Error("Firma Stripe incompleta.");
+    throw new HttpError("Firma Stripe incompleta.", 400);
   }
 
   const timestamp = Number.parseInt(t, 10);
   const now = Math.floor(Date.now() / 1000);
 
   if (!Number.isFinite(timestamp) || Math.abs(now - timestamp) > FIVE_MINUTES_IN_SECONDS) {
-    throw new Error("Firma Stripe expirada.");
+    throw new HttpError("Firma Stripe expirada.", 400);
   }
 
   const encoder = new TextEncoder();
@@ -83,9 +90,11 @@ const verifyStripeSignature = async (rawBody, signatureHeader, webhookSecret) =>
   const receivedSignature = hexToUint8Array(v1);
 
   if (!secureCompare(expectedSignature, receivedSignature)) {
-    throw new Error("Firma Stripe no valida.");
+    throw new HttpError("Firma Stripe no valida.", 400);
   }
 };
+
+const getChangedRows = (result) => Number(result?.meta?.changes || 0);
 
 export async function onRequestPost(context) {
   const { env, request } = context;
@@ -107,7 +116,12 @@ export async function onRequestPost(context) {
 
     await verifyStripeSignature(rawBody, signatureHeader, env.STRIPE_WEBHOOK_SECRET);
 
-    const event = JSON.parse(rawBody);
+    let event;
+    try {
+      event = JSON.parse(rawBody);
+    } catch {
+      throw new HttpError("Payload JSON invalido.", 400);
+    }
 
     if (event?.type !== "checkout.session.completed") {
       return json({ ok: true, ignored: true });
@@ -119,10 +133,7 @@ export async function onRequestPost(context) {
       typeof session?.payment_intent === "string" ? session.payment_intent : "";
 
     if (!sessionId) {
-      return json(
-        { ok: false, error: "Evento sin session.id." },
-        { status: 400 }
-      );
+      throw new HttpError("Evento sin session.id.", 400);
     }
 
     const result = await env.DB.prepare(
@@ -138,7 +149,7 @@ export async function onRequestPost(context) {
       .bind(paymentIntentId, sessionId)
       .run();
 
-    if (!result?.success) {
+    if (!result?.success || getChangedRows(result) !== 1) {
       return json(
         { ok: false, error: "No se pudo actualizar el registro del club." },
         { status: 500 }
@@ -152,7 +163,7 @@ export async function onRequestPost(context) {
         ok: false,
         error: error.message || "Error en webhook de Stripe.",
       },
-      { status: 400 }
+      { status: error instanceof HttpError ? error.status : 500 }
     );
   }
 }

@@ -8,6 +8,7 @@ const carousels = Array.from(document.querySelectorAll(".js-carousel"));
 const nav = document.getElementById("mainNav");
 const menuToggle = document.getElementById("menuToggle");
 const checkoutLink = form?.querySelector('a.btn[href]');
+const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024;
 
 let directoryQuery = "";
 let directoryData = [];
@@ -128,8 +129,18 @@ const createCheckoutSession = async () => {
     return;
   }
 
+  if (logo.size > MAX_FILE_SIZE_BYTES) {
+    showStatus("El logotipo excede el tamaño maximo permitido de 5 MB.", true);
+    return;
+  }
+
   if (!(fotoGrupal instanceof File) || fotoGrupal.size <= 0) {
     showStatus("Debes seleccionar una foto grupal.", true);
+    return;
+  }
+
+  if (fotoGrupal.size > MAX_FILE_SIZE_BYTES) {
+    showStatus("La foto grupal excede el tamaño maximo permitido de 5 MB.", true);
     return;
   }
 
