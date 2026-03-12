@@ -110,18 +110,37 @@ const createCheckoutSession = async () => {
   if (!form || isSubmittingCheckout) return;
 
   const fd = new FormData(form);
-  const payload = {
-    nombre_club: (fd.get("club") || "").toString().trim(),
-    direccion: (fd.get("direccion") || "").toString().trim(),
-    ciudad_estado: (fd.get("ciudadEstado") || "").toString().trim(),
-    instructor: (fd.get("instructor") || "").toString().trim(),
-    red_social: (fd.get("redSocial") || "").toString().trim(),
-  };
+  const nombreClub = (fd.get("club") || "").toString().trim();
+  const direccion = (fd.get("direccion") || "").toString().trim();
+  const ciudadEstado = (fd.get("ciudadEstado") || "").toString().trim();
+  const instructor = (fd.get("instructor") || "").toString().trim();
+  const redSocial = (fd.get("redSocial") || "").toString().trim();
+  const logo = fd.get("logo");
+  const fotoGrupal = fd.get("foto");
 
-  if (!payload.nombre_club || !payload.direccion || !payload.ciudad_estado || !payload.instructor) {
+  if (!nombreClub || !direccion || !ciudadEstado || !instructor) {
     showStatus("Completa los datos obligatorios del club.", true);
     return;
   }
+
+  if (!(logo instanceof File) || logo.size <= 0) {
+    showStatus("Debes seleccionar un logotipo.", true);
+    return;
+  }
+
+  if (!(fotoGrupal instanceof File) || fotoGrupal.size <= 0) {
+    showStatus("Debes seleccionar una foto grupal.", true);
+    return;
+  }
+
+  const payload = new FormData();
+  payload.append("nombre_club", nombreClub);
+  payload.append("direccion", direccion);
+  payload.append("ciudad_estado", ciudadEstado);
+  payload.append("instructor", instructor);
+  payload.append("red_social", redSocial);
+  payload.append("logo", logo);
+  payload.append("foto_grupal", fotoGrupal);
 
   isSubmittingCheckout = true;
   showStatus("Redirigiendo a Stripe...");
@@ -129,10 +148,7 @@ const createCheckoutSession = async () => {
   try {
     const response = await fetch("/api/create-checkout-session", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(payload),
+      body: payload,
     });
 
     const result = await response.json();

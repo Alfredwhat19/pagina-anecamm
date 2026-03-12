@@ -15,10 +15,64 @@ const json = (body, init = {}) =>
 
 const normalizeField = (value, { required = false } = {}) => {
   const normalized = typeof value === "string" ? value.trim() : "";
+
   if (required && !normalized) {
     throw new Error("Campos requeridos incompletos.");
   }
+
   return normalized;
+};
+
+const getFileExtension = (file) => {
+  const fileName = typeof file?.name === "string" ? file.name.trim() : "";
+  const match = fileName.match(/\.([a-zA-Z0-9]+)$/);
+
+  if (match?.[1]) {
+    return match[1].toLowerCase();
+  }
+
+  const mimeMap = {
+    "image/jpeg": "jpg",
+    "image/jpg": "jpg",
+    "image/png": "png",
+    "image/webp": "webp",
+  };
+
+  return mimeMap[file?.type] || "bin";
+};
+
+const buildTempKey = (suffix, extension) => {
+  const timestamp = Date.now();
+  const randomBytes = crypto.getRandomValues(new Uint8Array(8));
+  const randomPart = Array.from(randomBytes, (byte) =>
+    byte.toString(16).padStart(2, "0")
+  ).join("");
+
+  return `temp/clubes/${timestamp}-${randomPart}-${suffix}.${extension}`;
+};
+
+const assertImageFile = (file, fieldName) => {
+  if (!(file instanceof File) || !file.name || file.size <= 0) {
+    throw new Error(`El archivo ${fieldName} es obligatorio.`);
+  }
+};
+
+const uploadTempImage = async (bucket, file, suffix) => {
+  const extension = getFileExtension(file);
+  const key = buildTempKey(suffix, extension);
+  const body = await file.arrayBuffer();
+
+  await bucket.put(key, body, {
+    httpMetadata: {
+      contentType: file.type || "application/octet-stream",
+    },
+    customMetadata: {
+      originalName: file.name,
+      uploadPhase: "checkout_pending",
+    },
+  });
+
+  return key;
 };
 
 const createStripeCheckoutSession = async (secretKey, club) => {
@@ -53,10 +107,16 @@ const createStripeCheckoutSession = async (secretKey, club) => {
 
 export async function onRequestPost(context) {
   const { env, request } = context;
-  let clubId = null;
 
   if (!env?.DB) {
     return json({ ok: false, error: "DB binding no configurado." }, { status: 500 });
+  }
+
+  if (!env?.TEMP_IMAGES) {
+    return json(
+      { ok: false, error: "TEMP_IMAGES binding no configurado." },
+      { status: 500 }
+    );
   }
 
   if (!env?.STRIPE_SECRET_KEY) {
@@ -67,14 +127,33 @@ export async function onRequestPost(context) {
   }
 
   try {
-    const data = await request.json();
+    const contentType = request.headers.get("content-type") || "";
+    if (!contentType.toLowerCase().includes("multipart/form-data")) {
+      return json(
+        { ok: false, error: "Content-Type invalido. Usa multipart/form-data." },
+        { status: 400 }
+      );
+    }
+
+    const formData = await request.formData();
+    const logoFile = formData.get("logo");
+    const groupFile = formData.get("foto_grupal");
+
+    assertImageFile(logoFile, "logo");
+    assertImageFile(groupFile, "foto_grupal");
+
     const club = {
-      nombre_club: normalizeField(data?.nombre_club, { required: true }),
-      direccion: normalizeField(data?.direccion, { required: true }),
-      ciudad_estado: normalizeField(data?.ciudad_estado, { required: true }),
-      instructor: normalizeField(data?.instructor, { required: true }),
-      red_social: normalizeField(data?.red_social),
+      nombre_club: normalizeField(formData.get("nombre_club"), { required: true }),
+      direccion: normalizeField(formData.get("direccion"), { required: true }),
+      ciudad_estado: normalizeField(formData.get("ciudad_estado"), { required: true }),
+      instructor: normalizeField(formData.get("instructor"), { required: true }),
+      red_social: normalizeField(formData.get("red_social")),
     };
+
+    const [tempLogoKey, tempGroupKey] = await Promise.all([
+      uploadTempImage(env.TEMP_IMAGES, logoFile, "logo"),
+      uploadTempImage(env.TEMP_IMAGES, groupFile, "grupo"),
+    ]);
 
     const insertResult = await env.DB.prepare(
       `INSERT INTO directorio_clubes(
@@ -85,20 +164,24 @@ export async function onRequestPost(context) {
         red_social,
         estatus,
         payment_status,
-        visible_in_directory
+        visible_in_directory,
+        temp_logo_key,
+        temp_group_key
       )
-      VALUES(?, ?, ?, ?, ?, 'INACTIVO', 'pending', 0)`
+      VALUES(?, ?, ?, ?, ?, 'INACTIVO', 'pending', 0, ?, ?)`
     )
       .bind(
         club.nombre_club,
         club.direccion,
         club.ciudad_estado,
         club.instructor,
-        club.red_social
+        club.red_social,
+        tempLogoKey,
+        tempGroupKey
       )
       .run();
 
-    clubId = insertResult?.meta?.last_row_id;
+    const clubId = insertResult?.meta?.last_row_id;
     if (!clubId) {
       throw new Error("No se pudo registrar el club pendiente.");
     }
@@ -119,21 +202,8 @@ export async function onRequestPost(context) {
       id: clubId,
     });
   } catch (error) {
-    if (clubId) {
-      try {
-        await env.DB.prepare(
-          `DELETE FROM directorio_clubes
-           WHERE id = ? AND payment_status = 'pending'`
-        )
-          .bind(clubId)
-          .run();
-      } catch (cleanupError) {
-        console.error("Error limpiando registro pendiente:", cleanupError);
-      }
-    }
-
     const status =
-      error instanceof SyntaxError || error.message === "Campos requeridos incompletos."
+      error instanceof TypeError || error.message === "Campos requeridos incompletos."
         ? 400
         : 500;
 
