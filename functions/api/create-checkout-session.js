@@ -26,7 +26,7 @@ const normalizeField = (value, { required = false } = {}) => {
   const normalized = typeof value === "string" ? value.trim() : "";
 
   if (required && !normalized) {
-    throw new Error("Campos requeridos incompletos.");
+    throw new HttpError("Campos requeridos incompletos.", 400);
   }
 
   return normalized;
@@ -66,10 +66,7 @@ const assertImageFile = (file, fieldName) => {
   }
 
   if (file.size > MAX_FILE_SIZE_BYTES) {
-    throw new HttpError(
-      `El archivo ${fieldName} excede el tamaño maximo permitido de 5 MB.`,
-      400
-    );
+    throw new HttpError(`El archivo ${fieldName} excede el tamano maximo permitido de 5 MB.`, 400);
   }
 
   if (!ALLOWED_MIME_TYPES.has(file.type)) {
@@ -288,3 +285,4 @@ export async function onRequestPost(context) {
     );
   }
 }
+

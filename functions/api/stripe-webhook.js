@@ -32,7 +32,7 @@ const parseStripeSignature = (headerValue) => {
 
 const hexToUint8Array = (hex) => {
   if (!hex || hex.length % 2 !== 0) {
-    throw new Error("Firma Stripe invalida.");
+    throw new HttpError("Firma Stripe invalida.", 400);
   }
 
   const bytes = new Uint8Array(hex.length / 2);
@@ -167,3 +167,4 @@ export async function onRequestPost(context) {
     );
   }
 }
+
