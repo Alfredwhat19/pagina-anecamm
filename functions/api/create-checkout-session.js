@@ -1,6 +1,6 @@
 const STRIPE_API_URL = "https://api.stripe.com/v1/checkout/sessions";
 const SUCCESS_URL =
-  "https://www.anecamm.com/frontend/html/afiliaciones.html?success=true";
+  "https://www.anecamm.com/frontend/html/afiliaciones.html?success=true&session_id={CHECKOUT_SESSION_ID}";
 const CANCEL_URL =
   "https://www.anecamm.com/frontend/html/afiliaciones.html?cancel=true";
 const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024;

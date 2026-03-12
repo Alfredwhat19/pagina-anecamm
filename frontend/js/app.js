@@ -9,6 +9,9 @@ const nav = document.getElementById("mainNav");
 const menuToggle = document.getElementById("menuToggle");
 const checkoutLink = form?.querySelector('a.btn[href]');
 const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024;
+const CERT_TEMPLATE_URL = "../assets/templates/formato-afiliacion.html";
+const CERT_DOWNLOAD_KEY_PREFIX = "anecamm_cert_downloaded_";
+const CERT_SIGNED_BY = "Firmado por ANECAMM por Arjan Oliver Guerrero Díaz";
 
 let directoryQuery = "";
 let directoryData = [];
@@ -18,6 +21,142 @@ const showStatus = (message, isError = false) => {
   if (!statusMsg) return;
   statusMsg.textContent = message;
   statusMsg.classList.toggle("error", isError);
+};
+
+const parsePaidAt = (paidAt) => {
+  if (!paidAt || typeof paidAt !== "string") return null;
+  const normalized = paidAt.includes("T") ? paidAt : paidAt.replace(" ", "T");
+  const hasTimezone = /Z|[+-]\d{2}:?\d{2}$/.test(normalized);
+  const withTimezone = hasTimezone ? normalized : `${normalized}Z`;
+  const parsed = new Date(withTimezone);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+
+const formatEsDate = (date) =>
+  new Intl.DateTimeFormat("es-MX", {
+    day: "2-digit",
+    month: "long",
+    year: "numeric",
+  }).format(date);
+
+const buildDocumentId = (clubId, createdAt) => {
+  const datePart = createdAt.toISOString().slice(0, 10).replace(/-/g, "");
+  return `ANECAMM-${clubId}-${datePart}`;
+};
+
+const applyTemplateReplacements = (template, replacements) =>
+  Object.entries(replacements).reduce(
+    (html, [key, value]) => html.split(key).join(value),
+    template
+  );
+
+const downloadHtmlFile = (filename, html) => {
+  const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+};
+
+const fetchCertificateData = async (sessionId) => {
+  const response = await fetch(
+    `/api/afiliacion-documento?session_id=${encodeURIComponent(sessionId)}`
+  );
+  const payload = await response.json().catch(() => ({}));
+
+  return { response, payload };
+};
+
+const buildCertificateHtml = async (data) => {
+  const templateResponse = await fetch(CERT_TEMPLATE_URL, { cache: "no-store" });
+  if (!templateResponse.ok) {
+    throw new Error("No se pudo cargar el formato de afiliación.");
+  }
+
+  const template = await templateResponse.text();
+  const createdAt = parsePaidAt(data.paid_at);
+  if (!createdAt) {
+    throw new Error("No se pudo interpretar la fecha de pago.");
+  }
+
+  const expiresAt = new Date(createdAt);
+  expiresAt.setFullYear(expiresAt.getFullYear() + 1);
+
+  const documentId = buildDocumentId(data.id, createdAt);
+  const replacements = {
+    "{{nombre_club}}": data.nombre_club,
+    "{{ciudad_estado}}": data.ciudad_estado,
+    "{{nombre_coach}}": data.instructor,
+    "{{nombre_instructor}}": data.instructor,
+    "{{document_id}}": documentId,
+    "{{signed_by}}": CERT_SIGNED_BY,
+    "{{created_at}}": formatEsDate(createdAt),
+    "{{expires_at}}": formatEsDate(expiresAt),
+  };
+
+  return applyTemplateReplacements(template, replacements);
+};
+
+const attemptCertificateDownload = async (sessionId) => {
+  const { response, payload } = await fetchCertificateData(sessionId);
+
+  if (response.status === 409) {
+    return { pending: true };
+  }
+
+  if (!response.ok || !payload?.ok || !payload?.data) {
+    const message = payload?.error || "No se pudo preparar el documento.";
+    throw new Error(message);
+  }
+
+  const html = await buildCertificateHtml(payload.data);
+  const filename = `afiliacion-${payload.data.id}.html`;
+  downloadHtmlFile(filename, html);
+
+  return { ok: true };
+};
+
+const maybeDownloadCertificate = (sessionId) => {
+  if (!sessionId) return;
+
+  const storageKey = `${CERT_DOWNLOAD_KEY_PREFIX}${sessionId}`;
+  if (sessionStorage.getItem(storageKey)) return;
+
+  let attempts = 0;
+  const maxAttempts = 8;
+  const waitMs = 2000;
+
+  const run = async () => {
+    try {
+      const result = await attemptCertificateDownload(sessionId);
+      if (result?.ok) {
+        sessionStorage.setItem(storageKey, "1");
+        showStatus("Pago confirmado. Descargando tu documento...");
+        return;
+      }
+
+      if (result?.pending && attempts < maxAttempts) {
+        attempts += 1;
+        showStatus("Pago confirmado. Generando tu documento...");
+        setTimeout(run, waitMs);
+        return;
+      }
+
+      showStatus(
+        "Pago confirmado, pero el documento aun no esta listo. Intenta recargar en unos segundos.",
+        true
+      );
+    } catch (error) {
+      console.error(error);
+      showStatus(error.message || "No se pudo descargar el documento.", true);
+    }
+  };
+
+  run();
 };
 
 const rowTemplate = (club) => {
@@ -100,6 +239,8 @@ const showCheckoutStateFromUrl = () => {
 
   if (params.get("success") === "true") {
     showStatus("Pago confirmado. Tu afiliacion sera visible al confirmarse el webhook.");
+    const sessionId = params.get("session_id");
+    maybeDownloadCertificate(sessionId);
   }
 
   if (params.get("cancel") === "true") {
