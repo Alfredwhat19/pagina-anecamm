@@ -130,13 +130,14 @@ const getChangedRows = (result) => Number(result?.meta?.changes || 0);
 
 const createStripeCheckoutSession = async (secretKey, club) => {
   const body = new URLSearchParams({
-    mode: "payment",
+    mode: "subscription",
     success_url: SUCCESS_URL,
     cancel_url: CANCEL_URL,
     "line_items[0][price_data][currency]": "mxn",
     "line_items[0][price_data][product_data][name]":
       `Afiliacion ANECAMM - ${club.nombre_club}`,
-    "line_items[0][price_data][unit_amount]": "150000",
+    "line_items[0][price_data][unit_amount]": "1500",
+    "line_items[0][price_data][recurring][interval]": "year",
     "line_items[0][quantity]": "1",
     "metadata[nombre_club]": club.nombre_club,
     "metadata[club_id]": String(club.id),
@@ -285,4 +286,3 @@ export async function onRequestPost(context) {
     );
   }
 }
-
