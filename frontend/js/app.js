@@ -9,7 +9,6 @@ const nav = document.getElementById("mainNav");
 const menuToggle = document.getElementById("menuToggle");
 const checkoutLink = form?.querySelector('a.btn[href]');
 const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024;
-const CERT_TEMPLATE_URL = "../assets/templates/formato-afiliacion.html";
 const CERT_DOWNLOAD_KEY_PREFIX = "anecamm_cert_downloaded_";
 const CERT_SIGNED_BY = "Firmado por ANECAMM por Arjan Oliver Guerrero Díaz";
 
@@ -43,12 +42,6 @@ const buildDocumentId = (clubId, createdAt) => {
   const datePart = createdAt.toISOString().slice(0, 10).replace(/-/g, "");
   return `ANECAMM-${clubId}-${datePart}`;
 };
-
-const applyTemplateReplacements = (template, replacements) =>
-  Object.entries(replacements).reduce(
-    (html, [key, value]) => html.split(key).join(value),
-    template
-  );
 
 const createPdfRenderContainer = (html) => {
   const parser = new DOMParser();
@@ -147,12 +140,6 @@ const fetchCertificateData = async (sessionId) => {
 };
 
 const buildCertificateHtml = async (data) => {
-  const templateResponse = await fetch(CERT_TEMPLATE_URL, { cache: "no-store" });
-  if (!templateResponse.ok) {
-    throw new Error("No se pudo cargar el formato de afiliación.");
-  }
-
-  const template = await templateResponse.text();
   const createdAt = parsePaidAt(data.paid_at);
   if (!createdAt) {
     throw new Error("No se pudo interpretar la fecha de pago.");
@@ -162,18 +149,176 @@ const buildCertificateHtml = async (data) => {
   expiresAt.setFullYear(expiresAt.getFullYear() + 1);
 
   const documentId = data.document_id || buildDocumentId(data.id, createdAt);
-  const replacements = {
-    "{{nombre_club}}": data.nombre_club,
-    "{{ciudad_estado}}": data.ciudad_estado,
-    "{{nombre_coach}}": data.instructor,
-    "{{nombre_instructor}}": data.instructor,
-    "{{document_id}}": documentId,
-    "{{signed_by}}": CERT_SIGNED_BY,
-    "{{created_at}}": formatEsDate(createdAt),
-    "{{expires_at}}": formatEsDate(expiresAt),
-  };
 
-  return applyTemplateReplacements(template, replacements);
+  return `
+    <!doctype html>
+    <html lang="es">
+      <head>
+        <meta charset="UTF-8" />
+        <title>Certificado ANECAMM</title>
+        <style>
+          * {
+            box-sizing: border-box;
+          }
+
+          html,
+          body {
+            margin: 0;
+            padding: 0;
+            background: #ffffff;
+            color: #111111;
+            font-family: "Georgia", "Times New Roman", serif;
+          }
+
+          body {
+            width: 8.5in;
+            min-height: 11in;
+          }
+
+          .certificate {
+            position: relative;
+            width: 8.5in;
+            min-height: 11in;
+            padding: 0.55in;
+            background:
+              linear-gradient(135deg, rgba(151, 11, 26, 0.08), rgba(151, 11, 26, 0)),
+              #ffffff;
+          }
+
+          .frame {
+            min-height: calc(11in - 1.1in);
+            border: 4px solid #970b1a;
+            outline: 1px solid #d2b46d;
+            outline-offset: -14px;
+            padding: 0.7in 0.65in;
+          }
+
+          .eyebrow {
+            margin: 0;
+            text-align: center;
+            font-family: Arial, sans-serif;
+            font-size: 13px;
+            letter-spacing: 0.18em;
+            text-transform: uppercase;
+            color: #970b1a;
+          }
+
+          .title {
+            margin: 0.22in 0 0;
+            text-align: center;
+            font-size: 34px;
+            line-height: 1.15;
+          }
+
+          .subtitle {
+            margin: 0.18in auto 0;
+            max-width: 6.2in;
+            text-align: center;
+            font-size: 16px;
+            line-height: 1.65;
+          }
+
+          .club-name {
+            margin: 0.45in 0 0;
+            text-align: center;
+            font-size: 28px;
+            font-weight: 700;
+            color: #970b1a;
+            text-transform: uppercase;
+          }
+
+          .city {
+            margin: 0.12in 0 0;
+            text-align: center;
+            font-size: 18px;
+          }
+
+          .details {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0.24in;
+            margin-top: 0.5in;
+          }
+
+          .card {
+            border: 1px solid #dbc38c;
+            background: #fffaf0;
+            padding: 0.2in 0.22in;
+          }
+
+          .label {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            font-size: 11px;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: #6d6d6d;
+          }
+
+          .value {
+            margin: 0.08in 0 0;
+            font-size: 20px;
+            line-height: 1.35;
+          }
+
+          .footer {
+            margin-top: 0.55in;
+            padding-top: 0.3in;
+            border-top: 1px solid #d7d7d7;
+          }
+
+          .signature {
+            margin: 0;
+            text-align: center;
+            font-size: 18px;
+          }
+
+          .meta {
+            margin-top: 0.26in;
+            font-family: Arial, sans-serif;
+            font-size: 12px;
+            line-height: 1.8;
+            color: #333333;
+          }
+        </style>
+      </head>
+      <body>
+        <main class="certificate">
+          <section class="frame">
+            <p class="eyebrow">ANECAMM</p>
+            <h1 class="title">Certificado de Afiliacion</h1>
+            <p class="subtitle">
+              La Asociacion Nacional de Escuelas, Clubes y Academias de Muaythai de Mexico A.C.
+              acredita a este club como miembro activo dentro del directorio oficial de ANECAMM.
+            </p>
+
+            <h2 class="club-name">${data.nombre_club}</h2>
+            <p class="city">${data.ciudad_estado}</p>
+
+            <section class="details">
+              <article class="card">
+                <p class="label">Instructor responsable</p>
+                <p class="value">${data.instructor}</p>
+              </article>
+              <article class="card">
+                <p class="label">Vigencia</p>
+                <p class="value">${formatEsDate(createdAt)} al ${formatEsDate(expiresAt)}</p>
+              </article>
+            </section>
+
+            <footer class="footer">
+              <p class="signature">${CERT_SIGNED_BY}</p>
+              <div class="meta">
+                <div><strong>ID del documento:</strong> ${documentId}</div>
+                <div><strong>Fecha de emision:</strong> ${formatEsDate(createdAt)}</div>
+                <div><strong>Valido hasta:</strong> ${formatEsDate(expiresAt)}</div>
+              </div>
+            </footer>
+          </section>
+        </main>
+      </body>
+    </html>
+  `;
 };
 
 const attemptCertificateDownload = async (sessionId) => {
