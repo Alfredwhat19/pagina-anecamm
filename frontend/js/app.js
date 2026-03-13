@@ -10,7 +10,7 @@ const menuToggle = document.getElementById("menuToggle");
 const checkoutLink = form?.querySelector('a.btn[href]');
 const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024;
 const CERT_TEMPLATE_URL = "../assets/templates/formato-afiliacion.html";
-const USE_SIMPLE_CERTIFICATE_HTML = true;
+const USE_SIMPLE_CERTIFICATE_HTML = false;
 const CERT_DOWNLOAD_KEY_PREFIX = "anecamm_cert_downloaded_";
 const CERT_SIGNED_BY = "Firmado por ANECAMM por Arjan Oliver Guerrero Díaz";
 
