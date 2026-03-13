@@ -141,6 +141,7 @@ const createStripeCheckoutSession = async (secretKey, club) => {
     "line_items[0][quantity]": "1",
     "metadata[nombre_club]": club.nombre_club,
     "metadata[club_id]": String(club.id),
+    "subscription_data[metadata][club_id]": String(club.id),
     client_reference_id: String(club.id),
   });
 
