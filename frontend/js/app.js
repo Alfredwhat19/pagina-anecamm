@@ -82,29 +82,43 @@ const createPdfRenderContainer = (html) => {
   `;
 
   const renderRoot = document.createElement("div");
+  renderRoot.setAttribute("aria-hidden", "true");
   renderRoot.style.position = "fixed";
-  renderRoot.style.left = "0";
   renderRoot.style.top = "0";
-  renderRoot.style.zIndex = "-1";
-  renderRoot.style.pointerEvents = "none";
-  renderRoot.style.background = "#ffffff";
+  renderRoot.style.left = "0";
   renderRoot.style.width = "8.5in";
+  renderRoot.style.maxWidth = "8.5in";
+  renderRoot.style.minHeight = "11in";
+  renderRoot.style.height = "auto";
+  renderRoot.style.background = "#ffffff";
+  renderRoot.style.zIndex = "9999";
+  renderRoot.style.opacity = "0";
+  renderRoot.style.pointerEvents = "none";
+  renderRoot.style.transform = "none";
+  renderRoot.style.visibility = "visible";
   renderRoot.style.overflow = "hidden";
   renderRoot.innerHTML = `<style>${styles}\n${pdfOverrides}</style>${parsed.body.innerHTML}`;
 
   document.body.appendChild(renderRoot);
+  console.info("[cert-pdf] renderRoot creado y agregado al DOM", {
+    childCount: renderRoot.childNodes.length,
+  });
   return renderRoot;
 };
 
 const downloadPdfFile = async (filename, html) => {
   if (typeof window.html2pdf !== "function") {
+    console.error("[cert-pdf] html2pdf no esta disponible");
     throw new Error("La libreria para generar PDF no esta disponible.");
   }
 
+  console.info("[cert-pdf] html2pdf disponible");
   const renderRoot = createPdfRenderContainer(html);
 
   try {
     await new Promise((resolve) => requestAnimationFrame(resolve));
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    console.info("[cert-pdf] iniciando generacion de PDF", { filename });
 
     await window
       .html2pdf()
@@ -125,8 +139,14 @@ const downloadPdfFile = async (filename, html) => {
       })
       .from(renderRoot)
       .save();
+
+    console.info("[cert-pdf] .save() ejecutado", { filename });
+  } catch (error) {
+    console.error("[cert-pdf] error al generar o descargar el PDF", error);
+    throw error;
   } finally {
     renderRoot.remove();
+    console.info("[cert-pdf] renderRoot removido del DOM");
   }
 };
 
@@ -146,6 +166,10 @@ const buildCertificateHtml = async (data) => {
   }
 
   const template = await templateResponse.text();
+  console.info("[cert-pdf] template HTML cargado", {
+    length: template.length,
+    url: CERT_TEMPLATE_URL,
+  });
   const createdAt = parsePaidAt(data.paid_at);
   if (!createdAt) {
     throw new Error("No se pudo interpretar la fecha de pago.");
@@ -192,7 +216,12 @@ const maybeDownloadCertificate = (sessionId) => {
   if (!sessionId) return;
 
   const storageKey = `${CERT_DOWNLOAD_KEY_PREFIX}${sessionId}`;
-  if (sessionStorage.getItem(storageKey)) return;
+  if (sessionStorage.getItem(storageKey)) {
+    console.info("[cert-pdf] descarga omitida: ya existe marca en sessionStorage", {
+      sessionId,
+    });
+    return;
+  }
 
   let attempts = 0;
   const maxAttempts = 8;
@@ -200,16 +229,27 @@ const maybeDownloadCertificate = (sessionId) => {
 
   const run = async () => {
     try {
+      console.info("[cert-pdf] intentando descarga de certificado", {
+        sessionId,
+        attempt: attempts + 1,
+        maxAttempts: maxAttempts + 1,
+      });
       const result = await attemptCertificateDownload(sessionId);
       if (result?.ok) {
         sessionStorage.setItem(storageKey, "1");
         showStatus("Pago confirmado. Descargando tu documento...");
+        console.info("[cert-pdf] descarga completada", { sessionId });
         return;
       }
 
       if (result?.pending && attempts < maxAttempts) {
         attempts += 1;
         showStatus("Pago confirmado. Generando tu documento...");
+        console.info("[cert-pdf] documento pendiente, reintentando", {
+          sessionId,
+          nextAttempt: attempts + 1,
+          waitMs,
+        });
         setTimeout(run, waitMs);
         return;
       }
@@ -218,8 +258,12 @@ const maybeDownloadCertificate = (sessionId) => {
         "Pago confirmado, pero el documento aun no esta listo. Intenta recargar en unos segundos.",
         true
       );
+      console.warn("[cert-pdf] documento no listo tras agotar reintentos", {
+        sessionId,
+        attempts,
+      });
     } catch (error) {
-      console.error(error);
+      console.error("[cert-pdf] fallo en maybeDownloadCertificate", error);
       showStatus(error.message || "No se pudo descargar el documento.", true);
     }
   };
