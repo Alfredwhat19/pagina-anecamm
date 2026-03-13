@@ -84,21 +84,21 @@ const createPdfRenderContainer = (html) => {
 
   const renderRoot = document.createElement("div");
   renderRoot.setAttribute("aria-hidden", "true");
-  renderRoot.style.position = "fixed";
+  renderRoot.style.position = "absolute";
   renderRoot.style.top = "0";
-  renderRoot.style.left = "-9999px";
+  renderRoot.style.left = "0";
   renderRoot.style.width = "8.5in";
   renderRoot.style.maxWidth = "8.5in";
   renderRoot.style.minHeight = "11in";
   renderRoot.style.height = "auto";
   renderRoot.style.background = "#ffffff";
-  renderRoot.style.zIndex = "9999";
-  renderRoot.style.opacity = "1";
+  renderRoot.style.zIndex = "-1";
+  renderRoot.style.opacity = "0";
   renderRoot.style.pointerEvents = "none";
   renderRoot.style.transform = "none";
   renderRoot.style.visibility = "visible";
   renderRoot.style.display = "block";
-  renderRoot.style.overflow = "hidden";
+  renderRoot.style.overflow = "visible";
 
   const styleTag = document.createElement("style");
   styleTag.textContent = `${styles}\n${pdfOverrides}`;
@@ -106,6 +106,11 @@ const createPdfRenderContainer = (html) => {
   const content = parsed.body;
   const wrapper = document.createElement("div");
   wrapper.className = "pdf-content";
+  wrapper.style.width = "8.5in";
+  wrapper.style.maxWidth = "8.5in";
+  wrapper.style.minHeight = "11in";
+  wrapper.style.background = "#ffffff";
+  wrapper.style.overflow = "visible";
   renderRoot._pdfContent = wrapper;
   wrapper.innerHTML = content.innerHTML;
 
@@ -132,6 +137,9 @@ const downloadPdfFile = async (filename, html) => {
   try {
     await new Promise((resolve) => requestAnimationFrame(resolve));
     await new Promise((resolve) => setTimeout(resolve, 1000));
+    if (document.fonts?.ready) {
+      await document.fonts.ready;
+    }
     console.info("[cert-pdf] iniciando generacion de PDF", { filename });
     await Promise.all(
       Array.from(renderRoot.querySelectorAll("img"))
@@ -145,6 +153,10 @@ const downloadPdfFile = async (filename, html) => {
         )
     );
 
+    const pdfTarget = renderRoot._pdfContent || renderRoot;
+    const targetWidth = Math.ceil(pdfTarget.scrollWidth || pdfTarget.offsetWidth || 0);
+    const targetHeight = Math.ceil(pdfTarget.scrollHeight || pdfTarget.offsetHeight || 0);
+
     await window
       .html2pdf()
       .set({
@@ -155,6 +167,10 @@ const downloadPdfFile = async (filename, html) => {
           scale: 2,
           useCORS: true,
           backgroundColor: "#ffffff",
+          windowWidth: targetWidth || 816,
+          windowHeight: targetHeight || 1056,
+          scrollX: 0,
+          scrollY: 0,
         },
         jsPDF: {
           unit: "in",
@@ -162,7 +178,7 @@ const downloadPdfFile = async (filename, html) => {
           orientation: "portrait",
         },
       })
-      .from(renderRoot._pdfContent || renderRoot)
+      .from(pdfTarget)
       .save();
 
     console.info("[cert-pdf] .save() ejecutado", { filename });
