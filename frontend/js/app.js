@@ -10,6 +10,7 @@ const menuToggle = document.getElementById("menuToggle");
 const checkoutLink = form?.querySelector('a.btn[href]');
 const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024;
 const CERT_TEMPLATE_URL = "../assets/templates/formato-afiliacion.html";
+const USE_SIMPLE_CERTIFICATE_HTML = true;
 const CERT_DOWNLOAD_KEY_PREFIX = "anecamm_cert_downloaded_";
 const CERT_SIGNED_BY = "Firmado por ANECAMM por Arjan Oliver Guerrero Díaz";
 
@@ -160,6 +161,76 @@ const fetchCertificateData = async (sessionId) => {
 };
 
 const buildCertificateHtml = async (data) => {
+  const createdAt = parsePaidAt(data.paid_at);
+  if (!createdAt) {
+    throw new Error("No se pudo interpretar la fecha de pago.");
+  }
+
+  const expiresAt = new Date(createdAt);
+  expiresAt.setFullYear(expiresAt.getFullYear() + 1);
+
+  const documentId = data.document_id || buildDocumentId(data.id, createdAt);
+
+  if (USE_SIMPLE_CERTIFICATE_HTML) {
+    console.info("[cert-pdf] usando HTML simple temporal para diagnostico");
+    return `
+      <!doctype html>
+      <html lang="es">
+        <head>
+          <meta charset="UTF-8" />
+          <title>Afiliacion ANECAMM</title>
+          <style>
+            html, body {
+              margin: 0;
+              padding: 0;
+              background: #ffffff;
+              color: #111111;
+              font-family: Arial, sans-serif;
+            }
+
+            body {
+              width: 8.5in;
+              min-height: 11in;
+            }
+
+            .page {
+              width: 8.5in;
+              min-height: 11in;
+              padding: 0.75in;
+              background: #ffffff;
+            }
+
+            h1 {
+              margin: 0 0 0.35in;
+              font-size: 28px;
+              color: #970b1a;
+            }
+
+            .row {
+              margin-bottom: 0.18in;
+              font-size: 16px;
+              line-height: 1.5;
+            }
+
+            .label {
+              font-weight: 700;
+            }
+          </style>
+        </head>
+        <body>
+          <main class="page">
+            <h1>Afiliacion ANECAMM</h1>
+            <div class="row"><span class="label">Nombre del club:</span> ${data.nombre_club}</div>
+            <div class="row"><span class="label">Ciudad y estado:</span> ${data.ciudad_estado}</div>
+            <div class="row"><span class="label">Instructor:</span> ${data.instructor}</div>
+            <div class="row"><span class="label">ID del documento:</span> ${documentId}</div>
+            <div class="row"><span class="label">Fecha de emision:</span> ${formatEsDate(createdAt)}</div>
+          </main>
+        </body>
+      </html>
+    `;
+  }
+
   const templateResponse = await fetch(CERT_TEMPLATE_URL, { cache: "no-store" });
   if (!templateResponse.ok) {
     throw new Error("No se pudo cargar el formato de afiliación.");
@@ -170,15 +241,6 @@ const buildCertificateHtml = async (data) => {
     length: template.length,
     url: CERT_TEMPLATE_URL,
   });
-  const createdAt = parsePaidAt(data.paid_at);
-  if (!createdAt) {
-    throw new Error("No se pudo interpretar la fecha de pago.");
-  }
-
-  const expiresAt = new Date(createdAt);
-  expiresAt.setFullYear(expiresAt.getFullYear() + 1);
-
-  const documentId = data.document_id || buildDocumentId(data.id, createdAt);
   const replacements = {
     "{{nombre_club}}": data.nombre_club,
     "{{ciudad_estado}}": data.ciudad_estado,
