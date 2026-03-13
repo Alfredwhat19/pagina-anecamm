@@ -495,35 +495,47 @@ const createCheckoutSession = async () => {
   if (!form || isSubmittingCheckout) return;
 
   const fd = new FormData(form);
+  const logoInput = form.querySelector('input[name="logo"]');
+  const groupPhotoInput = form.querySelector('input[name="foto"]');
   const nombreClub = (fd.get("club") || "").toString().trim();
   const direccion = (fd.get("direccion") || "").toString().trim();
   const ciudadEstado = (fd.get("ciudadEstado") || "").toString().trim();
   const instructor = (fd.get("instructor") || "").toString().trim();
   const redSocial = (fd.get("redSocial") || "").toString().trim();
-  const logo = fd.get("logo");
-  const fotoGrupal = fd.get("foto");
+  const logoFile = logoInput?.files?.[0];
+  const groupPhotoFile = groupPhotoInput?.files?.[0];
 
   if (!nombreClub || !direccion || !ciudadEstado || !instructor) {
     showStatus("Completa los datos obligatorios del club.", true);
     return;
   }
 
-  if (!(logo instanceof File) || logo.size <= 0) {
+  if (!logoFile || logoFile.size <= 0) {
     showStatus("Debes seleccionar un logotipo.", true);
     return;
   }
 
-  if (logo.size > MAX_FILE_SIZE_BYTES) {
+  if (logoFile && !logoFile.type.startsWith("image/")) {
+    showStatus("El archivo debe ser JPG o PNG.", true);
+    return;
+  }
+
+  if (logoFile.size > MAX_FILE_SIZE_BYTES) {
     showStatus("El logotipo excede el tamaño maximo permitido de 5 MB.", true);
     return;
   }
 
-  if (!(fotoGrupal instanceof File) || fotoGrupal.size <= 0) {
+  if (!groupPhotoFile || groupPhotoFile.size <= 0) {
     showStatus("Debes seleccionar una foto grupal.", true);
     return;
   }
 
-  if (fotoGrupal.size > MAX_FILE_SIZE_BYTES) {
+  if (groupPhotoFile && !groupPhotoFile.type.startsWith("image/")) {
+    showStatus("El archivo debe ser JPG o PNG.", true);
+    return;
+  }
+
+  if (groupPhotoFile.size > MAX_FILE_SIZE_BYTES) {
     showStatus("La foto grupal excede el tamaño maximo permitido de 5 MB.", true);
     return;
   }
@@ -534,8 +546,8 @@ const createCheckoutSession = async () => {
   payload.append("ciudad_estado", ciudadEstado);
   payload.append("instructor", instructor);
   payload.append("red_social", redSocial);
-  payload.append("logo", logo);
-  payload.append("foto_grupal", fotoGrupal);
+  payload.append("logo", logoFile);
+  payload.append("foto_grupal", groupPhotoFile);
 
   isSubmittingCheckout = true;
   showStatus("Redirigiendo a Stripe...");
