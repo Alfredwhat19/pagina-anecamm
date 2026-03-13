@@ -1,4 +1,4 @@
-ï»¿const STORAGE_KEY = "anecamm_clubes";
+const STORAGE_KEY = "anecamm_clubes";
 const form = document.getElementById("clubForm");
 const directoryBody = document.getElementById("directoryBody");
 const statusMsg = document.getElementById("statusMsg");
@@ -11,7 +11,7 @@ const checkoutLink = form?.querySelector('a.btn[href]');
 const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024;
 const CERT_TEMPLATE_URL = "../assets/templates/formato-afiliacion.html";
 const CERT_DOWNLOAD_KEY_PREFIX = "anecamm_cert_downloaded_";
-const CERT_SIGNED_BY = "Firmado por ANECAMM por Arjan Oliver Guerrero DÃ­az";
+const CERT_SIGNED_BY = "Firmado por ANECAMM por Arjan Oliver Guerrero Díaz";
 
 let directoryQuery = "";
 let directoryData = [];
@@ -50,16 +50,58 @@ const applyTemplateReplacements = (template, replacements) =>
     template
   );
 
-const downloadHtmlFile = (filename, html) => {
-  const blob = new Blob([html], { type: "text/html;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = filename;
-  document.body.appendChild(anchor);
-  anchor.click();
-  anchor.remove();
-  URL.revokeObjectURL(url);
+const createPdfRenderContainer = (html) => {
+  const parser = new DOMParser();
+  const parsed = parser.parseFromString(html, "text/html");
+  const styles = Array.from(parsed.querySelectorAll("style"))
+    .map((style) => style.textContent || "")
+    .join("\n");
+
+  const renderRoot = document.createElement("div");
+  renderRoot.style.position = "fixed";
+  renderRoot.style.left = "-10000px";
+  renderRoot.style.top = "0";
+  renderRoot.style.zIndex = "-1";
+  renderRoot.style.background = "#ffffff";
+  renderRoot.style.width = "8.5in";
+  renderRoot.innerHTML = `<style>${styles}</style>${parsed.body.innerHTML}`;
+
+  document.body.appendChild(renderRoot);
+  return renderRoot;
+};
+
+const downloadPdfFile = async (filename, html) => {
+  if (typeof window.html2pdf !== "function") {
+    throw new Error("La libreria para generar PDF no esta disponible.");
+  }
+
+  const renderRoot = createPdfRenderContainer(html);
+
+  try {
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+
+    await window
+      .html2pdf()
+      .set({
+        margin: 0,
+        filename,
+        image: { type: "jpeg", quality: 0.98 },
+        html2canvas: {
+          scale: 2,
+          useCORS: true,
+          backgroundColor: "#ffffff",
+        },
+        jsPDF: {
+          unit: "in",
+          format: "letter",
+          orientation: "portrait",
+        },
+      })
+      .from(renderRoot)
+      .save();
+  } finally {
+    renderRoot.remove();
+  }
 };
 
 const fetchCertificateData = async (sessionId) => {
@@ -74,7 +116,7 @@ const fetchCertificateData = async (sessionId) => {
 const buildCertificateHtml = async (data) => {
   const templateResponse = await fetch(CERT_TEMPLATE_URL, { cache: "no-store" });
   if (!templateResponse.ok) {
-    throw new Error("No se pudo cargar el formato de afiliaciÃ³n.");
+    throw new Error("No se pudo cargar el formato de afiliación.");
   }
 
   const template = await templateResponse.text();
@@ -86,7 +128,7 @@ const buildCertificateHtml = async (data) => {
   const expiresAt = new Date(createdAt);
   expiresAt.setFullYear(expiresAt.getFullYear() + 1);
 
-  const documentId = buildDocumentId(data.id, createdAt);
+  const documentId = data.document_id || buildDocumentId(data.id, createdAt);
   const replacements = {
     "{{nombre_club}}": data.nombre_club,
     "{{ciudad_estado}}": data.ciudad_estado,
@@ -114,8 +156,8 @@ const attemptCertificateDownload = async (sessionId) => {
   }
 
   const html = await buildCertificateHtml(payload.data);
-  const filename = `afiliacion-${payload.data.id}.html`;
-  downloadHtmlFile(filename, html);
+  const filename = `afiliacion-${payload.data.id}.pdf`;
+  await downloadPdfFile(filename, html);
 
   return { ok: true };
 };
@@ -271,7 +313,7 @@ const createCheckoutSession = async () => {
   }
 
   if (logo.size > MAX_FILE_SIZE_BYTES) {
-    showStatus("El logotipo excede el tamaÃ±o maximo permitido de 5 MB.", true);
+    showStatus("El logotipo excede el tamaño maximo permitido de 5 MB.", true);
     return;
   }
 
@@ -281,7 +323,7 @@ const createCheckoutSession = async () => {
   }
 
   if (fotoGrupal.size > MAX_FILE_SIZE_BYTES) {
-    showStatus("La foto grupal excede el tamaÃ±o maximo permitido de 5 MB.", true);
+    showStatus("La foto grupal excede el tamaño maximo permitido de 5 MB.", true);
     return;
   }
 
@@ -522,3 +564,4 @@ document.addEventListener("DOMContentLoaded", () => {
   initMenu();
   initActiveNav();
 });
+

@@ -1,4 +1,4 @@
-﻿export const json = (body, init = {}) =>
+export const json = (body, init = {}) =>
   new Response(JSON.stringify(body), {
     headers: {
       "content-type": "application/json; charset=UTF-8",
@@ -6,6 +6,20 @@
     },
     ...init,
   });
+
+const parsePaidAt = (paidAt) => {
+  if (!paidAt || typeof paidAt !== "string") return null;
+  const normalized = paidAt.includes("T") ? paidAt : paidAt.replace(" ", "T");
+  const hasTimezone = /Z|[+-]\d{2}:?\d{2}$/.test(normalized);
+  const withTimezone = hasTimezone ? normalized : `${normalized}Z`;
+  const parsed = new Date(withTimezone);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+
+const buildDocumentId = (clubId, createdAt) => {
+  const datePart = createdAt.toISOString().slice(0, 10).replace(/-/g, "");
+  return `ANECAMM-${clubId}-${datePart}`;
+};
 
 export async function onRequestGet(context) {
   const { env, request } = context;
@@ -22,7 +36,7 @@ export async function onRequestGet(context) {
   }
 
   const record = await env.DB.prepare(
-    `SELECT id, nombre_club, ciudad_estado, instructor, payment_status, paid_at
+    `SELECT id, nombre_club, ciudad_estado, instructor, payment_status, paid_at, document_id
      FROM directorio_clubes
      WHERE stripe_session_id = ?
      LIMIT 1`
@@ -41,6 +55,27 @@ export async function onRequestGet(context) {
     );
   }
 
+  let documentId = record.document_id || "";
+  if (!documentId) {
+    const createdAt = parsePaidAt(record.paid_at);
+    if (!createdAt) {
+      return json(
+        { ok: false, error: "No se pudo interpretar la fecha del pago." },
+        { status: 500, headers: { "cache-control": "no-store" } }
+      );
+    }
+
+    documentId = buildDocumentId(record.id, createdAt);
+
+    await env.DB.prepare(
+      `UPDATE directorio_clubes
+       SET document_id = ?
+       WHERE id = ?`
+    )
+      .bind(documentId, record.id)
+      .run();
+  }
+
   return json(
     {
       ok: true,
@@ -50,6 +85,7 @@ export async function onRequestGet(context) {
         ciudad_estado: record.ciudad_estado,
         instructor: record.instructor,
         paid_at: record.paid_at,
+        document_id: documentId,
       },
     },
     { headers: { "cache-control": "no-store" } }
