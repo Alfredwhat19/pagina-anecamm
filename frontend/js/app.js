@@ -1,4 +1,4 @@
-const STORAGE_KEY = "anecamm_clubes";
+ï»¿const STORAGE_KEY = "anecamm_clubes";
 const form = document.getElementById("clubForm");
 const directoryBody = document.getElementById("directoryBody");
 const statusMsg = document.getElementById("statusMsg");
@@ -11,7 +11,7 @@ const checkoutLink = form?.querySelector('a.btn[href]');
 const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024;
 const CERT_TEMPLATE_URL = "../assets/templates/formato-afiliacion.html";
 const CERT_DOWNLOAD_KEY_PREFIX = "anecamm_cert_downloaded_";
-const CERT_SIGNED_BY = "Firmado por ANECAMM por Arjan Oliver Guerrero Díaz";
+const CERT_SIGNED_BY = "Firmado por ANECAMM por Arjan Oliver Guerrero DÃ­az";
 
 let directoryQuery = "";
 let directoryData = [];
@@ -82,13 +82,19 @@ const createPdfRenderContainer = (html) => {
   `;
 
   const renderRoot = document.createElement("div");
-  renderRoot.style.position = "fixed";
-  renderRoot.style.left = "0";
+  // Keep the node rendered and measurable for html2canvas, but move it off-screen.
+  renderRoot.style.position = "absolute";
+  renderRoot.style.left = "-10000px";
   renderRoot.style.top = "0";
-  renderRoot.style.zIndex = "-1";
+  renderRoot.style.zIndex = "0";
   renderRoot.style.pointerEvents = "none";
+  renderRoot.style.opacity = "1";
+  renderRoot.style.visibility = "visible";
   renderRoot.style.background = "#ffffff";
   renderRoot.style.width = "8.5in";
+  renderRoot.style.minWidth = "8.5in";
+  renderRoot.style.height = "11in";
+  renderRoot.style.minHeight = "11in";
   renderRoot.style.overflow = "hidden";
   renderRoot.innerHTML = `<style>${styles}\n${pdfOverrides}</style>${parsed.body.innerHTML}`;
 
@@ -104,7 +110,7 @@ const downloadPdfFile = async (filename, html) => {
   const renderRoot = createPdfRenderContainer(html);
 
   try {
-    await new Promise((resolve) => requestAnimationFrame(resolve));
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
 
     await window
       .html2pdf()
@@ -116,6 +122,7 @@ const downloadPdfFile = async (filename, html) => {
           scale: 2,
           useCORS: true,
           backgroundColor: "#ffffff",
+          logging: false,
         },
         jsPDF: {
           unit: "in",
@@ -142,7 +149,7 @@ const fetchCertificateData = async (sessionId) => {
 const buildCertificateHtml = async (data) => {
   const templateResponse = await fetch(CERT_TEMPLATE_URL, { cache: "no-store" });
   if (!templateResponse.ok) {
-    throw new Error("No se pudo cargar el formato de afiliación.");
+    throw new Error("No se pudo cargar el formato de afiliaciÃ³n.");
   }
 
   const template = await templateResponse.text();
@@ -376,7 +383,7 @@ const createCheckoutSession = async () => {
   }
 
   if (logo.size > MAX_FILE_SIZE_BYTES) {
-    showStatus("El logotipo excede el tamaño maximo permitido de 5 MB.", true);
+    showStatus("El logotipo excede el tamaÃ±o maximo permitido de 5 MB.", true);
     return;
   }
 
@@ -386,7 +393,7 @@ const createCheckoutSession = async () => {
   }
 
   if (fotoGrupal.size > MAX_FILE_SIZE_BYTES) {
-    showStatus("La foto grupal excede el tamaño maximo permitido de 5 MB.", true);
+    showStatus("La foto grupal excede el tamaÃ±o maximo permitido de 5 MB.", true);
     return;
   }
 
@@ -627,6 +634,7 @@ document.addEventListener("DOMContentLoaded", () => {
   initMenu();
   initActiveNav();
 });
+
 
 
 
