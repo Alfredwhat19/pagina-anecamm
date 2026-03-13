@@ -97,10 +97,22 @@ const createPdfRenderContainer = (html) => {
   renderRoot.style.pointerEvents = "none";
   renderRoot.style.transform = "none";
   renderRoot.style.visibility = "visible";
+  renderRoot.style.display = "block";
   renderRoot.style.overflow = "hidden";
-  renderRoot.innerHTML = `<style>${styles}\n${pdfOverrides}</style>${parsed.body.innerHTML}`;
+
+  const styleTag = document.createElement("style");
+  styleTag.textContent = `${styles}\n${pdfOverrides}`;
+
+  const content = parsed.body;
+  const wrapper = document.createElement("div");
+  wrapper.className = "pdf-content";
+  wrapper.innerHTML = content.innerHTML;
+
+  renderRoot.appendChild(styleTag);
+  renderRoot.appendChild(wrapper);
 
   document.body.appendChild(renderRoot);
+  console.log("[cert-pdf] contenido insertado", renderRoot.innerHTML.length);
   console.info("[cert-pdf] renderRoot creado y agregado al DOM", {
     childCount: renderRoot.childNodes.length,
   });
