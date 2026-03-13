@@ -133,6 +133,17 @@ const downloadPdfFile = async (filename, html) => {
     await new Promise((resolve) => requestAnimationFrame(resolve));
     await new Promise((resolve) => setTimeout(resolve, 1000));
     console.info("[cert-pdf] iniciando generacion de PDF", { filename });
+    await Promise.all(
+      Array.from(renderRoot.querySelectorAll("img"))
+        .filter((img) => !img.complete)
+        .map(
+          (img) =>
+            new Promise((resolve) => {
+              img.onload = resolve;
+              img.onerror = resolve;
+            })
+        )
+    );
 
     await window
       .html2pdf()
@@ -183,6 +194,12 @@ const buildCertificateHtml = async (data) => {
   expiresAt.setFullYear(expiresAt.getFullYear() + 1);
 
   const documentId = data.document_id || buildDocumentId(data.id, createdAt);
+  const logoHtml = data.logo_url
+    ? `<img src="${data.logo_url}" alt="Logo del club" />`
+    : "";
+  const groupHtml = data.group_photo_url
+    ? `<img src="${data.group_photo_url}" alt="Foto grupal del club" />`
+    : "";
 
   if (USE_SIMPLE_CERTIFICATE_HTML) {
     console.info("[cert-pdf] usando HTML simple temporal para diagnostico");
@@ -263,6 +280,8 @@ const buildCertificateHtml = async (data) => {
     "{{signed_by}}": CERT_SIGNED_BY,
     "{{created_at}}": formatEsDate(createdAt),
     "{{expires_at}}": formatEsDate(expiresAt),
+    "{{logo_html}}": logoHtml,
+    "{{group_html}}": groupHtml,
   };
 
   return applyTemplateReplacements(template, replacements);
