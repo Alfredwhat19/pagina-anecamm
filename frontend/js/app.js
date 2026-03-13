@@ -82,13 +82,14 @@ const createPdfRenderContainer = (html) => {
   `;
 
   const renderRoot = document.createElement("div");
-  renderRoot.style.position = "absolute";
+  renderRoot.style.position = "fixed";
   renderRoot.style.left = "0";
   renderRoot.style.top = "0";
-  renderRoot.style.opacity = "0";
+  renderRoot.style.zIndex = "-1";
   renderRoot.style.pointerEvents = "none";
   renderRoot.style.background = "#ffffff";
   renderRoot.style.width = "8.5in";
+  renderRoot.style.overflow = "hidden";
   renderRoot.innerHTML = `<style>${styles}\n${pdfOverrides}</style>${parsed.body.innerHTML}`;
 
   document.body.appendChild(renderRoot);
@@ -626,5 +627,7 @@ document.addEventListener("DOMContentLoaded", () => {
   initMenu();
   initActiveNav();
 });
+
+
 
 
