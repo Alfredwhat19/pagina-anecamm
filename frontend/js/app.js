@@ -56,15 +56,40 @@ const createPdfRenderContainer = (html) => {
   const styles = Array.from(parsed.querySelectorAll("style"))
     .map((style) => style.textContent || "")
     .join("\n");
+  const pdfOverrides = `
+    .pdf24_view {
+      font-size: 1em !important;
+      transform: none !important;
+      -webkit-transform: none !important;
+      -moz-transform: none !important;
+      transform-origin: top left !important;
+      -webkit-transform-origin: top left !important;
+      -moz-transform-origin: top left !important;
+    }
+
+    .pdf24_02 {
+      width: 45em !important;
+      height: 60em !important;
+      overflow: hidden !important;
+      box-shadow: none !important;
+      margin: 0 !important;
+    }
+
+    body > div {
+      box-shadow: none !important;
+      margin: 0 !important;
+    }
+  `;
 
   const renderRoot = document.createElement("div");
-  renderRoot.style.position = "fixed";
-  renderRoot.style.left = "-10000px";
+  renderRoot.style.position = "absolute";
+  renderRoot.style.left = "0";
   renderRoot.style.top = "0";
-  renderRoot.style.zIndex = "-1";
+  renderRoot.style.opacity = "0";
+  renderRoot.style.pointerEvents = "none";
   renderRoot.style.background = "#ffffff";
   renderRoot.style.width = "8.5in";
-  renderRoot.innerHTML = `<style>${styles}</style>${parsed.body.innerHTML}`;
+  renderRoot.innerHTML = `<style>${styles}\n${pdfOverrides}</style>${parsed.body.innerHTML}`;
 
   document.body.appendChild(renderRoot);
   return renderRoot;
@@ -601,4 +626,5 @@ document.addEventListener("DOMContentLoaded", () => {
   initMenu();
   initActiveNav();
 });
+
 
