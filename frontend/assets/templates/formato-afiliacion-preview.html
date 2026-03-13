@@ -1,0 +1,306 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Formato de Afiliacion ANECAMM Preview</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        background: #ffffff;
+        color: #111111;
+        font-family: "Georgia", "Times New Roman", serif;
+      }
+
+      body {
+        width: 8.5in;
+        min-height: 11in;
+      }
+
+      .certificate-page {
+        width: 8.5in;
+        min-height: 11in;
+        padding: 0.3in 0.26in 0.2in;
+        background: #ffffff;
+      }
+
+      .certificate-frame {
+        min-height: 10.7in;
+        padding: 0.04in 0.08in 0.06in;
+        background: #ffffff;
+      }
+
+      .top-row {
+        display: grid;
+        grid-template-columns: 1.28in 0.9in 1.1in 1.28in;
+        justify-content: space-between;
+        align-items: start;
+        gap: 0.24in;
+        margin-bottom: 0.06in;
+      }
+
+      .brand-logo {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        height: 1.34in;
+      }
+
+      .brand-logo img {
+        display: block;
+        max-width: 100%;
+        max-height: 100%;
+        object-fit: contain;
+      }
+
+      .flag-column {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding-top: 0.18in;
+      }
+
+      .flag {
+        width: 100%;
+        height: 0.56in;
+      }
+
+      .flag.flag-mx {
+        background:
+          linear-gradient(90deg, #117847 0 33.33%, #ffffff 33.33% 66.66%, #d8352a 66.66% 100%);
+        border: 1px solid #d9d9d9;
+      }
+
+      .flag.flag-th {
+        background:
+          linear-gradient(
+            180deg,
+            #e02d26 0 18%,
+            #ffffff 18% 34%,
+            #203d9b 34% 66%,
+            #ffffff 66% 82%,
+            #e02d26 82% 100%
+          );
+        border: 1px solid #d9d9d9;
+      }
+
+      .title-block {
+        margin: 0.08in auto 0;
+        max-width: 7.45in;
+        text-align: center;
+      }
+
+      .title-main {
+        margin: 0;
+        font-size: 0.4in;
+        line-height: 1.12;
+        font-weight: 500;
+        color: #0f0f0f;
+      }
+
+      .club-name {
+        margin: 0.2in 0 0;
+        text-align: center;
+        font-family: Arial, sans-serif;
+        font-size: 0.34in;
+        line-height: 1.15;
+        font-weight: 800;
+        color: #2f68ac;
+      }
+
+      .city-state {
+        margin: 0.05in 0 0;
+        text-align: center;
+        font-family: Arial, sans-serif;
+        font-size: 0.2in;
+        line-height: 1.15;
+        font-weight: 700;
+        color: #2f68ac;
+      }
+
+      .body-copy {
+        margin: 0.26in auto 0;
+        max-width: 7.15in;
+        text-align: center;
+        font-size: 0.32in;
+        line-height: 1.17;
+        color: #111111;
+      }
+
+      .coach-row {
+        margin: 0.2in 0 0;
+        text-align: center;
+        font-size: 0.31in;
+        line-height: 1.2;
+        color: #111111;
+      }
+
+      .coach-name {
+        margin-left: 0.09in;
+        font-family: Arial, sans-serif;
+        font-size: 0.22in;
+        font-weight: 800;
+        color: #3b68a7;
+      }
+
+      .lower-section {
+        display: grid;
+        grid-template-columns: 1.7in 1fr 1.92in;
+        gap: 0.2in;
+        align-items: end;
+        margin-top: 0.34in;
+      }
+
+      .qr-panel {
+        text-align: left;
+      }
+
+      .qr-box {
+        width: 1.42in;
+        height: 1.42in;
+      }
+
+      .qr-box img {
+        display: block;
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+      }
+
+      .qr-box svg {
+        display: block;
+        width: 100%;
+        height: 100%;
+      }
+
+      .tech-council {
+        text-align: center;
+        font-family: "Georgia", "Times New Roman", serif;
+      }
+
+      .tech-title {
+        margin: 0 0 0.08in;
+        font-family: Arial, sans-serif;
+        font-size: 0.21in;
+        font-weight: 800;
+        color: #111111;
+      }
+
+      .tech-list {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+        font-size: 0.18in;
+        line-height: 1.28;
+        color: #111111;
+      }
+
+      .tech-list .role {
+        font-family: Arial, sans-serif;
+        font-weight: 800;
+      }
+
+      .seal-panel {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding-bottom: 0.02in;
+      }
+
+      .seal-image {
+        display: block;
+        width: 1.72in;
+        height: auto;
+      }
+
+      .footer-meta {
+        margin-top: 0.16in;
+        font-family: Arial, sans-serif;
+        font-size: 0.135in;
+        line-height: 1.28;
+        color: #111111;
+      }
+
+      .meta-line {
+        margin: 0.03in 0 0;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="certificate-page">
+      <section class="certificate-frame">
+        <header class="top-row">
+          <div class="brand-logo">
+            <img src="../images/LogoC.png" alt="Logo ANECAMM" />
+          </div>
+          <div class="flag-column">
+            <div class="flag flag-mx" aria-label="Bandera de Mexico"></div>
+          </div>
+          <div class="flag-column">
+            <div class="flag flag-th" aria-label="Bandera de Tailandia"></div>
+          </div>
+          <div class="brand-logo">
+            <img src="../images/WMOC.png" alt="Logo WMO" />
+          </div>
+        </header>
+
+        <section class="title-block">
+          <h1 class="title-main">
+            La Asociacion Nacional de Escuelas, Clubes y Academias de Muaythai de Mexico A.C.
+            (ANECAMM) Acredita y certifica al Club de Muaythai
+          </h1>
+        </section>
+
+        <h2 class="club-name">PRUEBO-0011</h2>
+        <p class="city-state">Tabasco</p>
+
+        <p class="body-copy">
+          Como miembro activo, bajo los lineamientos establecidos por la Asociacion y con los
+          derechos y obligaciones derivados de los estatutos.
+        </p>
+
+        <p class="coach-row">
+          Head Coach:
+          <span class="coach-name">Alfredo</span>
+        </p>
+
+        <section class="lower-section">
+          <div class="qr-panel">
+            <div class="qr-box" aria-label="Codigo QR de verificacion">
+              <img src="../images/QR.png" alt="Codigo QR de verificacion" />
+            </div>
+          </div>
+
+          <div class="tech-council">
+            <h3 class="tech-title">Consejo Tecnico</h3>
+            <ul class="tech-list">
+              <li>Kru Cony Munoz</li>
+              <li class="role">Presidenta</li>
+              <li>Maestro Jesus Conde</li>
+              <li class="role">Vice Presidente</li>
+              <li>Arjan Oliver Guerrero Diaz</li>
+              <li class="role">Chairman</li>
+            </ul>
+          </div>
+
+          <div class="seal-panel">
+            <img class="seal-image" src="../images/CertificadoOriginal.png" alt="Certificado original" />
+          </div>
+        </section>
+
+        <footer class="footer-meta">
+          <p class="meta-line">ID del documento:</p>
+          <p class="meta-line">ANECAMM-99-20260313</p>
+          <p class="meta-line">Firmado por ANECAMM por Arjan Oliver Guerrero Diaz</p>
+          <p class="meta-line">Fecha de emision: 13 de marzo de 2026</p>
+          <p class="meta-line">Vigencia hasta: 13 de marzo de 2027</p>
+        </footer>
+      </section>
+    </main>
+  </body>
+</html>
