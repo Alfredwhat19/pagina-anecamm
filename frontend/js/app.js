@@ -261,7 +261,7 @@ const buildCertificateHtml = async (data) => {
     `;
   }
 
-  const templateResponse = await fetch(CERT_TEMPLATE_URL, { cache: "no-store" });
+  const templateResponse = await fetch(`${CERT_TEMPLATE_URL}?v=${Date.now()}`, { cache: "no-store" });
   if (!templateResponse.ok) {
     throw new Error("No se pudo cargar el formato de afiliación.");
   }
