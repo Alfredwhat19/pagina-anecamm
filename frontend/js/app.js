@@ -86,14 +86,14 @@ const createPdfRenderContainer = (html) => {
   renderRoot.setAttribute("aria-hidden", "true");
   renderRoot.style.position = "fixed";
   renderRoot.style.top = "0";
-  renderRoot.style.left = "0";
+  renderRoot.style.left = "-9999px";
   renderRoot.style.width = "8.5in";
   renderRoot.style.maxWidth = "8.5in";
   renderRoot.style.minHeight = "11in";
   renderRoot.style.height = "auto";
   renderRoot.style.background = "#ffffff";
   renderRoot.style.zIndex = "9999";
-  renderRoot.style.opacity = "0";
+  renderRoot.style.opacity = "1";
   renderRoot.style.pointerEvents = "none";
   renderRoot.style.transform = "none";
   renderRoot.style.visibility = "visible";
@@ -130,7 +130,7 @@ const downloadPdfFile = async (filename, html) => {
 
   try {
     await new Promise((resolve) => requestAnimationFrame(resolve));
-    await new Promise((resolve) => setTimeout(resolve, 300));
+    await new Promise((resolve) => setTimeout(resolve, 1000));
     console.info("[cert-pdf] iniciando generacion de PDF", { filename });
 
     await window
