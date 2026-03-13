@@ -106,6 +106,7 @@ const createPdfRenderContainer = (html) => {
   const content = parsed.body;
   const wrapper = document.createElement("div");
   wrapper.className = "pdf-content";
+  renderRoot._pdfContent = wrapper;
   wrapper.innerHTML = content.innerHTML;
 
   renderRoot.appendChild(styleTag);
@@ -150,7 +151,7 @@ const downloadPdfFile = async (filename, html) => {
           orientation: "portrait",
         },
       })
-      .from(renderRoot)
+      .from(renderRoot._pdfContent || renderRoot)
       .save();
 
     console.info("[cert-pdf] .save() ejecutado", { filename });
