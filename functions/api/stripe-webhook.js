@@ -1,4 +1,7 @@
-const FIVE_MINUTES_IN_SECONDS = 300;
+﻿const FIVE_MINUTES_IN_SECONDS = 300;
+const FACEBOOK_GRAPH_API_BASE = "https://graph.facebook.com/v22.0";
+const FACEBOOK_TIMEOUT_MS = 10000;
+const FACEBOOK_MAX_ATTEMPTS = 2;
 
 class HttpError extends Error {
   constructor(message, status = 500) {
@@ -96,6 +99,690 @@ const verifyStripeSignature = async (rawBody, signatureHeader, webhookSecret) =>
 
 const getChangedRows = (result) => Number(result?.meta?.changes || 0);
 
+const parseJsonPayload = (rawBody) => {
+  try {
+    return JSON.parse(rawBody);
+  } catch {
+    throw new HttpError("Payload JSON invalido.", 400);
+  }
+};
+
+const parseApiResponse = async (response) => {
+  const rawText = await response.text();
+
+  try {
+    return rawText ? JSON.parse(rawText) : {};
+  } catch {
+    return { rawText };
+  }
+};
+
+const buildFacebookError = (prefix, response, payload) => {
+  const message = payload?.error?.message || payload?.rawText || `HTTP ${response.status}`;
+  return `${prefix}: ${message}`;
+};
+
+const getContentTypeFromKey = (key) => {
+  const normalized = String(key || "").toLowerCase();
+  if (normalized.endsWith(".png")) return "image/png";
+  if (normalized.endsWith(".webp")) return "image/webp";
+  return "image/jpeg";
+};
+
+const getFilenameFromKey = (key, fallbackName) => {
+  const segments = String(key || "").split("/");
+  const lastSegment = segments[segments.length - 1];
+  return lastSegment || fallbackName;
+};
+
+const extractClubIdFromInvoice = (invoice) => {
+  const metadataClubId =
+    invoice?.parent?.subscription_details?.metadata?.club_id ||
+    invoice?.subscription_details?.metadata?.club_id ||
+    invoice?.lines?.data?.find((line) => line?.metadata?.club_id)?.metadata?.club_id ||
+    invoice?.metadata?.club_id;
+
+  const parsed = Number.parseInt(metadataClubId || "", 10);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+};
+
+const extractClubIdFromSubscription = (subscription) => {
+  const parsed = Number.parseInt(subscription?.metadata?.club_id || "", 10);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+};
+
+const getClubById = async (db, id) => {
+  if (!id) return null;
+
+  return (
+    (await db
+      .prepare(
+        `SELECT
+          id,
+          nombre_club,
+          payment_status,
+          estatus,
+          visible_in_directory,
+          stripe_session_id,
+          stripe_subscription_id,
+          stripe_customer_id,
+          stripe_payment_intent_id,
+          temp_logo_key,
+          temp_group_key,
+          paid_at,
+          facebook_post_id,
+          facebook_publish_status,
+          facebook_published_at,
+          facebook_publish_lock,
+          facebook_error
+        FROM directorio_clubes
+        WHERE id = ?
+        LIMIT 1`
+      )
+      .bind(id)
+      .first()) || null
+  );
+};
+
+const getClubByCheckoutSession = async (db, sessionId, clientReferenceId) => {
+  if (sessionId) {
+    const bySession = await db
+      .prepare(
+        `SELECT
+          id,
+          nombre_club,
+          stripe_session_id,
+          stripe_subscription_id,
+          stripe_customer_id,
+          temp_logo_key,
+          temp_group_key,
+          facebook_published_at,
+          facebook_publish_lock
+        FROM directorio_clubes
+        WHERE stripe_session_id = ?
+        LIMIT 1`
+      )
+      .bind(sessionId)
+      .first();
+
+    if (bySession) return bySession;
+  }
+
+  const parsedId = Number.parseInt(clientReferenceId || "", 10);
+  if (Number.isInteger(parsedId) && parsedId > 0) {
+    return getClubById(db, parsedId);
+  }
+
+  return null;
+};
+
+const getClubBySubscriptionOrCustomer = async (db, subscriptionId, customerId, clubId) => {
+  if (subscriptionId) {
+    const bySubscription = await db
+      .prepare(
+        `SELECT
+          id,
+          nombre_club,
+          payment_status,
+          estatus,
+          visible_in_directory,
+          stripe_session_id,
+          stripe_subscription_id,
+          stripe_customer_id,
+          stripe_payment_intent_id,
+          temp_logo_key,
+          temp_group_key,
+          paid_at,
+          facebook_post_id,
+          facebook_publish_status,
+          facebook_published_at,
+          facebook_publish_lock,
+          facebook_error
+        FROM directorio_clubes
+        WHERE stripe_subscription_id = ?
+        LIMIT 1`
+      )
+      .bind(subscriptionId)
+      .first();
+
+    if (bySubscription) return bySubscription;
+  }
+
+  if (clubId) {
+    const byClubId = await getClubById(db, clubId);
+    if (byClubId) return byClubId;
+  }
+
+  if (customerId) {
+    const byCustomer = await db
+      .prepare(
+        `SELECT
+          id,
+          nombre_club,
+          payment_status,
+          estatus,
+          visible_in_directory,
+          stripe_session_id,
+          stripe_subscription_id,
+          stripe_customer_id,
+          stripe_payment_intent_id,
+          temp_logo_key,
+          temp_group_key,
+          paid_at,
+          facebook_post_id,
+          facebook_publish_status,
+          facebook_published_at,
+          facebook_publish_lock,
+          facebook_error
+        FROM directorio_clubes
+        WHERE stripe_customer_id = ?
+        LIMIT 1`
+      )
+      .bind(customerId)
+      .first();
+
+    if (byCustomer) return byCustomer;
+  }
+
+  return null;
+};
+
+const getClubForInvoice = async (db, invoice) =>
+  getClubBySubscriptionOrCustomer(
+    db,
+    typeof invoice?.subscription === "string" ? invoice.subscription : "",
+    typeof invoice?.customer === "string" ? invoice.customer : "",
+    extractClubIdFromInvoice(invoice)
+  );
+
+const getClubForSubscriptionEvent = async (db, subscription) =>
+  getClubBySubscriptionOrCustomer(
+    db,
+    typeof subscription?.id === "string" ? subscription.id : "",
+    typeof subscription?.customer === "string" ? subscription.customer : "",
+    extractClubIdFromSubscription(subscription)
+  );
+
+const loadTempImage = async (bucket, key, fallbackName) => {
+  if (!key) {
+    throw new Error(`Falta la key temporal para ${fallbackName}.`);
+  }
+
+  const object = await bucket.get(key);
+  if (!object) {
+    throw new Error(`No se encontro el archivo temporal: ${key}`);
+  }
+
+  const contentType = object.httpMetadata?.contentType || getContentTypeFromKey(key);
+  const filename = getFilenameFromKey(key, fallbackName);
+  const blob = new Blob([await object.arrayBuffer()], { type: contentType });
+
+  return { blob, filename };
+};
+
+const fetchWithTimeout = async (url, init = {}, timeoutMs = FACEBOOK_TIMEOUT_MS) => {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    return await fetch(url, {
+      ...init,
+      signal: controller.signal,
+    });
+  } catch (error) {
+    if (error?.name === "AbortError") {
+      throw new Error(`Timeout de ${timeoutMs}ms alcanzado.`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
+};
+
+const withFacebookRetry = async (operationName, operation) => {
+  let lastError = null;
+
+  for (let attempt = 1; attempt <= FACEBOOK_MAX_ATTEMPTS; attempt += 1) {
+    try {
+      return await operation();
+    } catch (error) {
+      lastError = error;
+      console.warn(`Facebook ${operationName} fallo en intento ${attempt}`, {
+        error: error.message,
+      });
+      if (attempt === FACEBOOK_MAX_ATTEMPTS) {
+        throw lastError;
+      }
+    }
+  }
+
+  throw lastError || new Error(`Fallo desconocido en ${operationName}.`);
+};
+
+const uploadFacebookPhoto = async (pageId, accessToken, image, label) =>
+  withFacebookRetry(`upload_${label}`, async () => {
+    const formData = new FormData();
+    formData.append("access_token", accessToken);
+    formData.append("published", "false");
+    formData.append("source", image.blob, image.filename);
+
+    const response = await fetchWithTimeout(
+      `${FACEBOOK_GRAPH_API_BASE}/${pageId}/photos`,
+      {
+        method: "POST",
+        body: formData,
+      }
+    );
+
+    const payload = await parseApiResponse(response);
+    if (!response.ok || !payload?.id) {
+      throw new Error(buildFacebookError(`Error subiendo ${label} a Facebook`, response, payload));
+    }
+
+    return payload.id;
+  });
+
+const createFacebookFeedPost = async (pageId, accessToken, message, mediaIds) =>
+  withFacebookRetry("create_feed_post", async () => {
+    const body = new URLSearchParams({
+      access_token: accessToken,
+      message,
+    });
+
+    mediaIds.forEach((mediaId, index) => {
+      body.append(
+        `attached_media[${index}]`,
+        JSON.stringify({ media_fbid: mediaId })
+      );
+    });
+
+    const response = await fetchWithTimeout(
+      `${FACEBOOK_GRAPH_API_BASE}/${pageId}/feed`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body,
+      }
+    );
+
+    const payload = await parseApiResponse(response);
+    if (!response.ok || !payload?.id) {
+      throw new Error(buildFacebookError("Error creando post en Facebook", response, payload));
+    }
+
+    return payload.id;
+  });
+
+const publishClubToFacebook = async (env, club) => {
+  if (!env?.FB_PAGE_ID || !env?.FB_PAGE_ACCESS_TOKEN) {
+    throw new Error("FB_PAGE_ID o FB_PAGE_ACCESS_TOKEN no configurados.");
+  }
+
+  if (!club?.temp_logo_key || !club?.temp_group_key) {
+    throw new Error("Faltan imagenes temporales para publicar en Facebook.");
+  }
+
+  const [logoImage, groupImage] = await Promise.all([
+    loadTempImage(env.TEMP_IMAGES, club.temp_logo_key, "logo.jpg"),
+    loadTempImage(env.TEMP_IMAGES, club.temp_group_key, "grupo.jpg"),
+  ]);
+
+  const [logoMediaId, groupMediaId] = await Promise.all([
+    uploadFacebookPhoto(env.FB_PAGE_ID, env.FB_PAGE_ACCESS_TOKEN, logoImage, "logo"),
+    uploadFacebookPhoto(env.FB_PAGE_ID, env.FB_PAGE_ACCESS_TOKEN, groupImage, "foto_grupal"),
+  ]);
+
+  const message =
+    `Damos la bienvenida a ${club.nombre_club} como nuevos miembros de ANECAMM.\n` +
+    "¡Que esta etapa venga llena de esfuerzo, unión y grandes logros!";
+
+  return createFacebookFeedPost(
+    env.FB_PAGE_ID,
+    env.FB_PAGE_ACCESS_TOKEN,
+    message,
+    [logoMediaId, groupMediaId]
+  );
+};
+
+const cleanupR2Images = async (bucket, keys) => {
+  const tasks = keys.filter(Boolean).map((key) => bucket.delete(key));
+  const results = await Promise.allSettled(tasks);
+
+  results.forEach((result) => {
+    if (result.status === "rejected") {
+      console.warn("No se pudo borrar imagen temporal de R2", {
+        error: result.reason?.message || String(result.reason),
+      });
+    }
+  });
+};
+
+const saveFacebookError = async (db, clubId, errorMessage) => {
+  await db
+    .prepare(
+      `UPDATE directorio_clubes
+       SET
+         facebook_publish_status = 'error',
+         facebook_error = ?
+       WHERE id = ?`
+    )
+    .bind(String(errorMessage || "Error desconocido."), clubId)
+    .run();
+};
+
+const reserveFacebookPublication = async (db, clubId, lockToken) => {
+  const result = await db
+    .prepare(
+      `UPDATE directorio_clubes
+       SET
+         facebook_publish_lock = ?,
+         facebook_publish_status = 'publishing',
+         facebook_error = NULL
+       WHERE id = ?
+         AND facebook_published_at IS NULL
+         AND facebook_publish_lock IS NULL`
+    )
+    .bind(lockToken, clubId)
+    .run();
+
+  return getChangedRows(result) === 1;
+};
+
+const markFacebookPublished = async (db, clubId, facebookPostId, lockToken) => {
+  const result = await db
+    .prepare(
+      `UPDATE directorio_clubes
+       SET
+         facebook_post_id = ?,
+         facebook_published_at = CURRENT_TIMESTAMP,
+         facebook_publish_status = 'published',
+         facebook_error = NULL,
+         facebook_publish_lock = NULL
+       WHERE id = ? AND facebook_publish_lock = ? AND facebook_published_at IS NULL`
+    )
+    .bind(facebookPostId, clubId, lockToken)
+    .run();
+
+  return getChangedRows(result) === 1;
+};
+
+const markFacebookPublishError = async (db, clubId, errorMessage, lockToken) => {
+  await db
+    .prepare(
+      `UPDATE directorio_clubes
+       SET
+         facebook_publish_status = 'error',
+         facebook_error = ?
+       WHERE id = ? AND facebook_publish_lock = ?`
+    )
+    .bind(String(errorMessage || "Error desconocido."), clubId, lockToken)
+    .run();
+};
+
+const reserveStripeEvent = async (db, eventId) => {
+  try {
+    const result = await db
+      .prepare("INSERT INTO stripe_events(id) VALUES(?)")
+      .bind(eventId)
+      .run();
+
+    return Boolean(result?.success);
+  } catch (error) {
+    if (String(error?.message || "").toLowerCase().includes("unique")) {
+      return false;
+    }
+    throw error;
+  }
+};
+
+const releaseStripeEvent = async (db, eventId) => {
+  try {
+    await db.prepare("DELETE FROM stripe_events WHERE id = ?").bind(eventId).run();
+  } catch (error) {
+    console.error("No se pudo liberar stripe_event tras error", {
+      eventId,
+      error: error.message,
+    });
+  }
+};
+
+const handleCheckoutSessionCompleted = async (env, session, eventType) => {
+  const sessionId = typeof session?.id === "string" ? session.id : "";
+  const subscriptionId =
+    typeof session?.subscription === "string" ? session.subscription : "";
+  const customerId =
+    typeof session?.customer === "string" ? session.customer : "";
+  const clientReferenceId =
+    typeof session?.client_reference_id === "string" ? session.client_reference_id : "";
+
+  if (!sessionId) {
+    throw new HttpError("Evento checkout.session.completed sin session.id.", 400);
+  }
+
+  const club = await getClubByCheckoutSession(env.DB, sessionId, clientReferenceId);
+  if (!club) {
+    throw new Error(`No se encontro club para stripe_session_id=${sessionId}.`);
+  }
+
+  const result = await env.DB
+    .prepare(
+      `UPDATE directorio_clubes
+       SET
+         stripe_session_id = ?,
+         stripe_subscription_id = COALESCE(?, stripe_subscription_id),
+         stripe_customer_id = COALESCE(?, stripe_customer_id)
+       WHERE id = ?`
+    )
+    .bind(sessionId, subscriptionId || null, customerId || null, club.id)
+    .run();
+
+  if (!result?.success || getChangedRows(result) !== 1) {
+    throw new Error(`No se pudo actualizar la correlacion Stripe del club ${club.id}.`);
+  }
+
+  console.log("Stripe webhook procesado", {
+    eventType,
+    clubId: club.id,
+    subscriptionId: subscriptionId || null,
+  });
+};
+
+const maybePublishToFacebook = async (env, club) => {
+  if (club.facebook_published_at) {
+    if (club.temp_logo_key || club.temp_group_key) {
+      await cleanupR2Images(env.TEMP_IMAGES, [club.temp_logo_key, club.temp_group_key]);
+    }
+
+    console.log("Facebook ya estaba publicado", {
+      clubId: club.id,
+      subscriptionId: club.stripe_subscription_id || null,
+    });
+    return;
+  }
+
+  if (!club.temp_logo_key || !club.temp_group_key) {
+    const missingKeysError = "Faltan temp_logo_key o temp_group_key para publicar en Facebook.";
+    await saveFacebookError(env.DB, club.id, missingKeysError);
+    throw new Error(missingKeysError);
+  }
+
+  const lockToken = crypto.randomUUID();
+  const reserved = await reserveFacebookPublication(env.DB, club.id, lockToken);
+
+  if (!reserved) {
+    const currentClub = await getClubById(env.DB, club.id);
+
+    if (currentClub?.facebook_published_at) {
+      if (currentClub.temp_logo_key || currentClub.temp_group_key) {
+        await cleanupR2Images(env.TEMP_IMAGES, [
+          currentClub.temp_logo_key,
+          currentClub.temp_group_key,
+        ]);
+      }
+      return;
+    }
+
+    if (currentClub?.facebook_publish_lock) {
+      console.warn("Facebook publish lock ya reservado", {
+        clubId: club.id,
+        subscriptionId: club.stripe_subscription_id || null,
+      });
+      return;
+    }
+
+    throw new Error(`No se pudo reservar la publicacion de Facebook para el club ${club.id}.`);
+  }
+
+  try {
+    const facebookPostId = await publishClubToFacebook(env, club);
+    const saved = await markFacebookPublished(env.DB, club.id, facebookPostId, lockToken);
+
+    if (!saved) {
+      throw new Error(`No se pudo guardar la publicacion de Facebook para el club ${club.id}.`);
+    }
+
+    await cleanupR2Images(env.TEMP_IMAGES, [club.temp_logo_key, club.temp_group_key]);
+
+    console.log("Facebook publicado", {
+      clubId: club.id,
+      subscriptionId: club.stripe_subscription_id || null,
+    });
+  } catch (error) {
+    await markFacebookPublishError(env.DB, club.id, error.message, lockToken);
+    throw error;
+  }
+};
+
+const handleInvoicePaid = async (env, invoice, eventType) => {
+  const subscriptionId =
+    typeof invoice?.subscription === "string" ? invoice.subscription : "";
+  const customerId =
+    typeof invoice?.customer === "string" ? invoice.customer : "";
+  const paymentIntentId =
+    typeof invoice?.payment_intent === "string" ? invoice.payment_intent : "";
+
+  const club = await getClubForInvoice(env.DB, invoice);
+  if (!club) {
+    throw new Error("No se encontro club para invoice.paid.");
+  }
+
+  const activationResult = await env.DB
+    .prepare(
+      `UPDATE directorio_clubes
+       SET
+         payment_status = 'paid',
+         estatus = 'ACTIVO',
+         visible_in_directory = 1,
+         stripe_payment_intent_id = COALESCE(?, stripe_payment_intent_id),
+         stripe_subscription_id = COALESCE(?, stripe_subscription_id),
+         stripe_customer_id = COALESCE(?, stripe_customer_id),
+         paid_at = COALESCE(paid_at, CURRENT_TIMESTAMP)
+       WHERE id = ? AND payment_status != 'paid'`
+    )
+    .bind(paymentIntentId || null, subscriptionId || null, customerId || null, club.id)
+    .run();
+
+  console.log("Stripe webhook procesado", {
+    eventType,
+    clubId: club.id,
+    subscriptionId: subscriptionId || club.stripe_subscription_id || null,
+  });
+
+  const refreshedClub = await getClubById(env.DB, club.id);
+  if (!refreshedClub) {
+    throw new Error(`No se pudo recargar el club ${club.id} despues de invoice.paid.`);
+  }
+
+  if (getChangedRows(activationResult) === 0 && refreshedClub.payment_status === "paid") {
+    console.log("Activacion omitida por idempotencia", {
+      eventType,
+      clubId: refreshedClub.id,
+      subscriptionId: refreshedClub.stripe_subscription_id || subscriptionId || null,
+    });
+  }
+
+  try {
+    await maybePublishToFacebook(env, refreshedClub);
+  } catch (error) {
+    await saveFacebookError(env.DB, refreshedClub.id, error.message);
+    throw error;
+  }
+};
+
+const handleInvoicePaymentFailed = async (env, invoice, eventType) => {
+  const subscriptionId =
+    typeof invoice?.subscription === "string" ? invoice.subscription : "";
+  const customerId =
+    typeof invoice?.customer === "string" ? invoice.customer : "";
+
+  const club = await getClubForInvoice(env.DB, invoice);
+  if (!club) {
+    throw new Error("No se encontro club para invoice.payment_failed.");
+  }
+
+  const result = await env.DB
+    .prepare(
+      `UPDATE directorio_clubes
+       SET
+         payment_status = 'past_due',
+         estatus = 'INACTIVO',
+         visible_in_directory = 0,
+         stripe_subscription_id = COALESCE(?, stripe_subscription_id),
+         stripe_customer_id = COALESCE(?, stripe_customer_id)
+       WHERE id = ?`
+    )
+    .bind(subscriptionId || null, customerId || null, club.id)
+    .run();
+
+  if (!result?.success || getChangedRows(result) !== 1) {
+    throw new Error(`No se pudo actualizar el club ${club.id} a past_due.`);
+  }
+
+  console.log("Stripe webhook procesado", {
+    eventType,
+    clubId: club.id,
+    subscriptionId: subscriptionId || club.stripe_subscription_id || null,
+  });
+};
+
+const handleSubscriptionDeleted = async (env, subscription, eventType) => {
+  const subscriptionId =
+    typeof subscription?.id === "string" ? subscription.id : "";
+  const customerId =
+    typeof subscription?.customer === "string" ? subscription.customer : "";
+
+  const club = await getClubForSubscriptionEvent(env.DB, subscription);
+  if (!club) {
+    throw new Error("No se encontro club para customer.subscription.deleted.");
+  }
+
+  const result = await env.DB
+    .prepare(
+      `UPDATE directorio_clubes
+       SET
+         payment_status = 'cancelled',
+         estatus = 'INACTIVO',
+         visible_in_directory = 0,
+         stripe_subscription_id = COALESCE(?, stripe_subscription_id),
+         stripe_customer_id = COALESCE(?, stripe_customer_id)
+       WHERE id = ?`
+    )
+    .bind(subscriptionId || null, customerId || null, club.id)
+    .run();
+
+  if (!result?.success || getChangedRows(result) !== 1) {
+    throw new Error(`No se pudo cancelar el club ${club.id}.`);
+  }
+
+  console.log("Stripe webhook procesado", {
+    eventType,
+    clubId: club.id,
+    subscriptionId: subscriptionId || club.stripe_subscription_id || null,
+  });
+};
+
 export async function onRequestPost(context) {
   const { env, request } = context;
 
@@ -110,53 +797,58 @@ export async function onRequestPost(context) {
     );
   }
 
-  try {
-    const signatureHeader = request.headers.get("stripe-signature");
-    const rawBody = await request.text();
+  if (!env?.TEMP_IMAGES) {
+    return json(
+      { ok: false, error: "TEMP_IMAGES binding no configurado." },
+      { status: 500 }
+    );
+  }
 
+  const signatureHeader = request.headers.get("stripe-signature");
+  const rawBody = await request.text();
+
+  try {
     await verifyStripeSignature(rawBody, signatureHeader, env.STRIPE_WEBHOOK_SECRET);
 
-    let event;
+    const event = parseJsonPayload(rawBody);
+    const eventId = typeof event?.id === "string" ? event.id : "";
+    const eventType = typeof event?.type === "string" ? event.type : "";
+
+    if (!eventId) {
+      throw new HttpError("Evento Stripe sin id.", 400);
+    }
+
+    const reserved = await reserveStripeEvent(env.DB, eventId);
+    if (!reserved) {
+      return json({ ok: true, duplicate: true, event: eventType || null });
+    }
+
     try {
-      event = JSON.parse(rawBody);
-    } catch {
-      throw new HttpError("Payload JSON invalido.", 400);
+      if (eventType === "checkout.session.completed") {
+        await handleCheckoutSessionCompleted(env, event.data?.object, eventType);
+        return json({ ok: true, handled: eventType });
+      }
+
+      if (eventType === "invoice.paid") {
+        await handleInvoicePaid(env, event.data?.object, eventType);
+        return json({ ok: true, handled: eventType });
+      }
+
+      if (eventType === "invoice.payment_failed") {
+        await handleInvoicePaymentFailed(env, event.data?.object, eventType);
+        return json({ ok: true, handled: eventType });
+      }
+
+      if (eventType === "customer.subscription.deleted") {
+        await handleSubscriptionDeleted(env, event.data?.object, eventType);
+        return json({ ok: true, handled: eventType });
+      }
+
+      return json({ ok: true, ignored: true, event: eventType || null });
+    } catch (error) {
+      await releaseStripeEvent(env.DB, eventId);
+      throw error;
     }
-
-    if (event?.type !== "checkout.session.completed") {
-      return json({ ok: true, ignored: true });
-    }
-
-    const session = event?.data?.object;
-    const sessionId = session?.id;
-    const paymentIntentId =
-      typeof session?.payment_intent === "string" ? session.payment_intent : "";
-
-    if (!sessionId) {
-      throw new HttpError("Evento sin session.id.", 400);
-    }
-
-    const result = await env.DB.prepare(
-      `UPDATE directorio_clubes
-      SET
-        payment_status = 'paid',
-        estatus = 'ACTIVO',
-        visible_in_directory = 1,
-        stripe_payment_intent_id = ?,
-        paid_at = CURRENT_TIMESTAMP
-      WHERE stripe_session_id = ?`
-    )
-      .bind(paymentIntentId, sessionId)
-      .run();
-
-    if (!result?.success || getChangedRows(result) !== 1) {
-      return json(
-        { ok: false, error: "No se pudo actualizar el registro del club." },
-        { status: 500 }
-      );
-    }
-
-    return json({ ok: true });
   } catch (error) {
     return json(
       {
@@ -167,4 +859,3 @@ export async function onRequestPost(context) {
     );
   }
 }
-

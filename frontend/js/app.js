@@ -159,21 +159,66 @@ const maybeDownloadCertificate = (sessionId) => {
   run();
 };
 
-const rowTemplate = (club) => {
-  const red = club.red_social
-    ? `<a href="${club.red_social}" target="_blank" rel="noreferrer">Ver perfil</a>`
-    : "-";
+const createTextCell = (value) => {
+  const cell = document.createElement("td");
+  cell.textContent = value;
+  return cell;
+};
 
-  return `
-    <tr>
-      <td>${club.nombre_club}</td>
-      <td>${club.ciudad_estado}</td>
-      <td>${club.instructor}</td>
-      <td>-</td>
-      <td>${red}</td>
-      <td>${club.estatus}</td>
-    </tr>
-  `;
+const getSafeHttpUrl = (value) => {
+  if (typeof value !== "string") return null;
+
+  try {
+    const parsed = new URL(value.trim());
+    if (parsed.protocol === "http:" || parsed.protocol === "https:") {
+      return parsed.toString();
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+};
+
+const createSocialCell = (value) => {
+  const cell = document.createElement("td");
+  const safeUrl = getSafeHttpUrl(value);
+
+  if (!safeUrl) {
+    cell.textContent = "-";
+    return cell;
+  }
+
+  const link = document.createElement("a");
+  link.href = safeUrl;
+  link.target = "_blank";
+  link.rel = "noreferrer";
+  link.textContent = "Ver perfil";
+  cell.appendChild(link);
+
+  return cell;
+};
+
+const createDirectoryRow = (club) => {
+  const row = document.createElement("tr");
+  row.appendChild(createTextCell(club.nombre_club || ""));
+  row.appendChild(createTextCell(club.ciudad_estado || ""));
+  row.appendChild(createTextCell(club.instructor || ""));
+  row.appendChild(createTextCell("-"));
+  row.appendChild(createSocialCell(club.red_social));
+  row.appendChild(createTextCell(club.estatus || ""));
+  return row;
+};
+
+const renderDirectoryMessage = (message) => {
+  if (!directoryBody) return;
+
+  const row = document.createElement("tr");
+  const cell = document.createElement("td");
+  cell.colSpan = 6;
+  cell.textContent = message;
+  row.appendChild(cell);
+  directoryBody.replaceChildren(row);
 };
 
 const filterClubs = (clubs, query) => {
@@ -200,15 +245,11 @@ const renderDirectory = () => {
 
   const clubs = filterClubs(directoryData, directoryQuery);
   if (!clubs.length) {
-    directoryBody.innerHTML = `
-      <tr>
-        <td colspan="6">No hay resultados para mostrar.</td>
-      </tr>
-    `;
+    renderDirectoryMessage("No hay resultados para mostrar.");
     return;
   }
 
-  directoryBody.innerHTML = clubs.map(rowTemplate).join("");
+  directoryBody.replaceChildren(...clubs.map((club) => createDirectoryRow(club)));
 };
 
 async function cargarDirectorio() {
@@ -223,11 +264,7 @@ async function cargarDirectorio() {
     directoryData = await response.json();
     renderDirectory();
   } catch (error) {
-    directoryBody.innerHTML = `
-      <tr>
-        <td colspan="6">No se pudo cargar el directorio.</td>
-      </tr>
-    `;
+    renderDirectoryMessage("No se pudo cargar el directorio.");
     console.error(error);
   }
 }
