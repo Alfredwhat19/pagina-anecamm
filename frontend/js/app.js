@@ -85,15 +85,15 @@ const createPdfRenderContainer = (html) => {
   const renderRoot = document.createElement("div");
   renderRoot.setAttribute("aria-hidden", "true");
   renderRoot.style.position = "absolute";
-  renderRoot.style.top = "0";
-  renderRoot.style.left = "0";
+  renderRoot.style.top = "-10000px";
+  renderRoot.style.left = "-10000px";
   renderRoot.style.width = "8.5in";
   renderRoot.style.maxWidth = "8.5in";
   renderRoot.style.minHeight = "11in";
   renderRoot.style.height = "auto";
   renderRoot.style.background = "#ffffff";
   renderRoot.style.zIndex = "-1";
-  renderRoot.style.opacity = "0";
+  renderRoot.style.opacity = "1";
   renderRoot.style.pointerEvents = "none";
   renderRoot.style.transform = "none";
   renderRoot.style.visibility = "visible";
