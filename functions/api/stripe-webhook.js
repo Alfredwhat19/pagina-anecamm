@@ -1,7 +1,8 @@
 ﻿const FIVE_MINUTES_IN_SECONDS = 300;
-const FACEBOOK_GRAPH_API_BASE = "https://graph.facebook.com/v22.0";
-const FACEBOOK_TIMEOUT_MS = 10000;
-const FACEBOOK_MAX_ATTEMPTS = 2;
+const RESEND_API_URL = "https://api.resend.com/emails";
+const EMAIL_TIMEOUT_MS = 10000;
+const EMAIL_MAX_ATTEMPTS = 2;
+const WELCOME_EMAIL_TO = "jose.star49@gmail.com";
 
 class HttpError extends Error {
   constructor(message, status = 500) {
@@ -117,7 +118,7 @@ const parseApiResponse = async (response) => {
   }
 };
 
-const buildFacebookError = (prefix, response, payload) => {
+const buildProviderError = (prefix, response, payload) => {
   const message = payload?.error?.message || payload?.rawText || `HTTP ${response.status}`;
   return `${prefix}: ${message}`;
 };
@@ -315,12 +316,13 @@ const loadTempImage = async (bucket, key, fallbackName) => {
 
   const contentType = object.httpMetadata?.contentType || getContentTypeFromKey(key);
   const filename = getFilenameFromKey(key, fallbackName);
-  const blob = new Blob([await object.arrayBuffer()], { type: contentType });
+  const arrayBuffer = await object.arrayBuffer();
+  const blob = new Blob([arrayBuffer], { type: contentType });
 
-  return { blob, filename };
+  return { blob, filename, contentType, arrayBuffer };
 };
 
-const fetchWithTimeout = async (url, init = {}, timeoutMs = FACEBOOK_TIMEOUT_MS) => {
+const fetchWithTimeout = async (url, init = {}, timeoutMs = EMAIL_TIMEOUT_MS) => {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
@@ -339,18 +341,18 @@ const fetchWithTimeout = async (url, init = {}, timeoutMs = FACEBOOK_TIMEOUT_MS)
   }
 };
 
-const withFacebookRetry = async (operationName, operation) => {
+const withEmailRetry = async (operationName, operation) => {
   let lastError = null;
 
-  for (let attempt = 1; attempt <= FACEBOOK_MAX_ATTEMPTS; attempt += 1) {
+  for (let attempt = 1; attempt <= EMAIL_MAX_ATTEMPTS; attempt += 1) {
     try {
       return await operation();
     } catch (error) {
       lastError = error;
-      console.warn(`Facebook ${operationName} fallo en intento ${attempt}`, {
+      console.warn(`Email ${operationName} fallo en intento ${attempt}`, {
         error: error.message,
       });
-      if (attempt === FACEBOOK_MAX_ATTEMPTS) {
+      if (attempt === EMAIL_MAX_ATTEMPTS) {
         throw lastError;
       }
     }
@@ -359,69 +361,54 @@ const withFacebookRetry = async (operationName, operation) => {
   throw lastError || new Error(`Fallo desconocido en ${operationName}.`);
 };
 
-const uploadFacebookPhoto = async (pageId, accessToken, image, label) =>
-  withFacebookRetry(`upload_${label}`, async () => {
-    const formData = new FormData();
-    formData.append("access_token", accessToken);
-    formData.append("published", "false");
-    formData.append("source", image.blob, image.filename);
+const arrayBufferToBase64 = (arrayBuffer) => {
+  const bytes = new Uint8Array(arrayBuffer);
+  const chunkSize = 0x8000;
+  let binary = "";
 
-    const response = await fetchWithTimeout(
-      `${FACEBOOK_GRAPH_API_BASE}/${pageId}/photos`,
-      {
-        method: "POST",
-        body: formData,
-      }
-    );
+  for (let index = 0; index < bytes.length; index += chunkSize) {
+    const chunk = bytes.subarray(index, index + chunkSize);
+    binary += String.fromCharCode(...chunk);
+  }
 
-    const payload = await parseApiResponse(response);
-    if (!response.ok || !payload?.id) {
-      throw new Error(buildFacebookError(`Error subiendo ${label} a Facebook`, response, payload));
-    }
+  return btoa(binary);
+};
 
-    return payload.id;
-  });
+const buildWelcomeEmailHtml = (club) => `
+  <div style="font-family: Arial, sans-serif; color: #172033; line-height: 1.6;">
+    <h2 style="margin: 0 0 12px; color: #18315c;">Nueva afiliacion ANECAMM</h2>
+    <p style="margin: 0 0 12px;">${club.nombre_club} se integro como miembro activo de ANECAMM.</p>
+    <p style="margin: 0 0 18px;">
+      Bienvenidos. Que esta nueva etapa llegue con disciplina, crecimiento y muchos logros para todo el equipo.
+    </p>
+    <p style="margin: 0 0 8px; font-weight: 700;">Logo del club</p>
+    <img src="cid:logo-image" alt="Logo del club" style="display: block; max-width: 220px; width: 100%; height: auto; margin-bottom: 18px;" />
+    <p style="margin: 0 0 8px; font-weight: 700;">Foto grupal</p>
+    <img src="cid:group-image" alt="Foto grupal" style="display: block; max-width: 420px; width: 100%; height: auto;" />
+  </div>
+`;
 
-const createFacebookFeedPost = async (pageId, accessToken, message, mediaIds) =>
-  withFacebookRetry("create_feed_post", async () => {
-    const body = new URLSearchParams({
-      access_token: accessToken,
-      message,
-    });
+const buildWelcomeEmailText = (club) =>
+  [
+    "Nueva afiliacion ANECAMM",
+    "",
+    `${club.nombre_club} se integro como miembro activo de ANECAMM.`,
+    "Bienvenidos. Que esta nueva etapa llegue con disciplina, crecimiento y muchos logros para todo el equipo.",
+    "",
+    "Se adjuntan el logo del club y la foto grupal.",
+  ].join("\n");
 
-    mediaIds.forEach((mediaId, index) => {
-      body.append(
-        `attached_media[${index}]`,
-        JSON.stringify({ media_fbid: mediaId })
-      );
-    });
+const sendWelcomeEmail = async (env, club) => {
+  if (!env?.RESEND_API_KEY) {
+    throw new Error("RESEND_API_KEY no configurado.");
+  }
 
-    const response = await fetchWithTimeout(
-      `${FACEBOOK_GRAPH_API_BASE}/${pageId}/feed`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
-        },
-        body,
-      }
-    );
-
-    const payload = await parseApiResponse(response);
-    if (!response.ok || !payload?.id) {
-      throw new Error(buildFacebookError("Error creando post en Facebook", response, payload));
-    }
-
-    return payload.id;
-  });
-
-const publishClubToFacebook = async (env, club) => {
-  if (!env?.FB_PAGE_ID || !env?.FB_PAGE_ACCESS_TOKEN) {
-    throw new Error("FB_PAGE_ID o FB_PAGE_ACCESS_TOKEN no configurados.");
+  if (!env?.RESEND_FROM_EMAIL) {
+    throw new Error("RESEND_FROM_EMAIL no configurado.");
   }
 
   if (!club?.temp_logo_key || !club?.temp_group_key) {
-    throw new Error("Faltan imagenes temporales para publicar en Facebook.");
+    throw new Error("Faltan imagenes temporales para enviar el correo de bienvenida.");
   }
 
   const [logoImage, groupImage] = await Promise.all([
@@ -429,21 +416,44 @@ const publishClubToFacebook = async (env, club) => {
     loadTempImage(env.TEMP_IMAGES, club.temp_group_key, "grupo.jpg"),
   ]);
 
-  const [logoMediaId, groupMediaId] = await Promise.all([
-    uploadFacebookPhoto(env.FB_PAGE_ID, env.FB_PAGE_ACCESS_TOKEN, logoImage, "logo"),
-    uploadFacebookPhoto(env.FB_PAGE_ID, env.FB_PAGE_ACCESS_TOKEN, groupImage, "foto_grupal"),
-  ]);
+  return withEmailRetry("send_welcome_email", async () => {
+    const response = await fetchWithTimeout(RESEND_API_URL, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${env.RESEND_API_KEY}`,
+        "Content-Type": "application/json",
+        "Idempotency-Key": `welcome-email-${club.id}`,
+      },
+      body: JSON.stringify({
+        from: env.RESEND_FROM_EMAIL,
+        to: [WELCOME_EMAIL_TO],
+        subject: `Nueva afiliacion ANECAMM: ${club.nombre_club}`,
+        html: buildWelcomeEmailHtml(club),
+        text: buildWelcomeEmailText(club),
+        attachments: [
+          {
+            content: arrayBufferToBase64(logoImage.arrayBuffer),
+            filename: logoImage.filename,
+            content_type: logoImage.contentType,
+            contentId: "logo-image",
+          },
+          {
+            content: arrayBufferToBase64(groupImage.arrayBuffer),
+            filename: groupImage.filename,
+            content_type: groupImage.contentType,
+            contentId: "group-image",
+          },
+        ],
+      }),
+    });
 
-  const message =
-    `Damos la bienvenida a ${club.nombre_club} como nuevos miembros de ANECAMM.\n` +
-    "¡Que esta etapa venga llena de esfuerzo, unión y grandes logros!";
+    const payload = await parseApiResponse(response);
+    if (!response.ok || !payload?.id) {
+      throw new Error(buildProviderError("Error enviando correo con Resend", response, payload));
+    }
 
-  return createFacebookFeedPost(
-    env.FB_PAGE_ID,
-    env.FB_PAGE_ACCESS_TOKEN,
-    message,
-    [logoMediaId, groupMediaId]
-  );
+    return payload.id;
+  });
 };
 
 const cleanupR2Images = async (bucket, keys) => {
@@ -459,12 +469,12 @@ const cleanupR2Images = async (bucket, keys) => {
   });
 };
 
-const saveFacebookError = async (db, clubId, errorMessage) => {
+const saveNotificationError = async (db, clubId, errorMessage) => {
   await db
     .prepare(
       `UPDATE directorio_clubes
        SET
-         facebook_publish_status = 'error',
+         facebook_publish_status = 'email_error',
          facebook_error = ?
        WHERE id = ?`
     )
@@ -472,13 +482,13 @@ const saveFacebookError = async (db, clubId, errorMessage) => {
     .run();
 };
 
-const reserveFacebookPublication = async (db, clubId, lockToken) => {
+const reserveNotificationSend = async (db, clubId, lockToken) => {
   const result = await db
     .prepare(
       `UPDATE directorio_clubes
        SET
          facebook_publish_lock = ?,
-         facebook_publish_status = 'publishing',
+         facebook_publish_status = 'sending_email',
          facebook_error = NULL
        WHERE id = ?
          AND facebook_published_at IS NULL
@@ -490,30 +500,30 @@ const reserveFacebookPublication = async (db, clubId, lockToken) => {
   return getChangedRows(result) === 1;
 };
 
-const markFacebookPublished = async (db, clubId, facebookPostId, lockToken) => {
+const markNotificationSent = async (db, clubId, providerMessageId, lockToken) => {
   const result = await db
     .prepare(
       `UPDATE directorio_clubes
        SET
          facebook_post_id = ?,
          facebook_published_at = CURRENT_TIMESTAMP,
-         facebook_publish_status = 'published',
+         facebook_publish_status = 'email_sent',
          facebook_error = NULL,
          facebook_publish_lock = NULL
        WHERE id = ? AND facebook_publish_lock = ? AND facebook_published_at IS NULL`
     )
-    .bind(facebookPostId, clubId, lockToken)
+    .bind(providerMessageId, clubId, lockToken)
     .run();
 
   return getChangedRows(result) === 1;
 };
 
-const markFacebookPublishError = async (db, clubId, errorMessage, lockToken) => {
+const markNotificationError = async (db, clubId, errorMessage, lockToken) => {
   await db
     .prepare(
       `UPDATE directorio_clubes
        SET
-         facebook_publish_status = 'error',
+         facebook_publish_status = 'email_error',
          facebook_error = ?
        WHERE id = ? AND facebook_publish_lock = ?`
     )
@@ -589,13 +599,13 @@ const handleCheckoutSessionCompleted = async (env, session, eventType) => {
   });
 };
 
-const maybePublishToFacebook = async (env, club) => {
+const maybeSendWelcomeEmail = async (env, club) => {
   if (club.facebook_published_at) {
     if (club.temp_logo_key || club.temp_group_key) {
       await cleanupR2Images(env.TEMP_IMAGES, [club.temp_logo_key, club.temp_group_key]);
     }
 
-    console.log("Facebook ya estaba publicado", {
+    console.log("Correo de bienvenida ya enviado", {
       clubId: club.id,
       subscriptionId: club.stripe_subscription_id || null,
     });
@@ -603,13 +613,13 @@ const maybePublishToFacebook = async (env, club) => {
   }
 
   if (!club.temp_logo_key || !club.temp_group_key) {
-    const missingKeysError = "Faltan temp_logo_key o temp_group_key para publicar en Facebook.";
-    await saveFacebookError(env.DB, club.id, missingKeysError);
+    const missingKeysError = "Faltan temp_logo_key o temp_group_key para enviar el correo.";
+    await saveNotificationError(env.DB, club.id, missingKeysError);
     throw new Error(missingKeysError);
   }
 
   const lockToken = crypto.randomUUID();
-  const reserved = await reserveFacebookPublication(env.DB, club.id, lockToken);
+  const reserved = await reserveNotificationSend(env.DB, club.id, lockToken);
 
   if (!reserved) {
     const currentClub = await getClubById(env.DB, club.id);
@@ -625,32 +635,32 @@ const maybePublishToFacebook = async (env, club) => {
     }
 
     if (currentClub?.facebook_publish_lock) {
-      console.warn("Facebook publish lock ya reservado", {
+      console.warn("Email send lock ya reservado", {
         clubId: club.id,
         subscriptionId: club.stripe_subscription_id || null,
       });
       return;
     }
 
-    throw new Error(`No se pudo reservar la publicacion de Facebook para el club ${club.id}.`);
+    throw new Error(`No se pudo reservar el envio de correo para el club ${club.id}.`);
   }
 
   try {
-    const facebookPostId = await publishClubToFacebook(env, club);
-    const saved = await markFacebookPublished(env.DB, club.id, facebookPostId, lockToken);
+    const emailId = await sendWelcomeEmail(env, club);
+    const saved = await markNotificationSent(env.DB, club.id, emailId, lockToken);
 
     if (!saved) {
-      throw new Error(`No se pudo guardar la publicacion de Facebook para el club ${club.id}.`);
+      throw new Error(`No se pudo guardar el envio de correo para el club ${club.id}.`);
     }
 
     await cleanupR2Images(env.TEMP_IMAGES, [club.temp_logo_key, club.temp_group_key]);
 
-    console.log("Facebook publicado", {
+    console.log("Correo de bienvenida enviado", {
       clubId: club.id,
       subscriptionId: club.stripe_subscription_id || null,
     });
   } catch (error) {
-    await markFacebookPublishError(env.DB, club.id, error.message, lockToken);
+    await markNotificationError(env.DB, club.id, error.message, lockToken);
     throw error;
   }
 };
@@ -704,9 +714,9 @@ const handleInvoicePaid = async (env, invoice, eventType) => {
   }
 
   try {
-    await maybePublishToFacebook(env, refreshedClub);
+    await maybeSendWelcomeEmail(env, refreshedClub);
   } catch (error) {
-    await saveFacebookError(env.DB, refreshedClub.id, error.message);
+    await saveNotificationError(env.DB, refreshedClub.id, error.message);
     throw error;
   }
 };
