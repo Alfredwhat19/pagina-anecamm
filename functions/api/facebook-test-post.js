@@ -54,18 +54,22 @@ const publishFacebookTestPost = async (pageId, accessToken) => {
 };
 
 export async function onRequestGet({ env }) {
-  if (!env?.FACEBOOK_PAGE_ID || !env?.FACEBOOK_PAGE_TOKEN) {
+  const pageId = env?.FB_PAGE_ID || env?.FACEBOOK_PAGE_ID;
+  const pageToken = env?.FB_PAGE_ACCESS_TOKEN || env?.FACEBOOK_PAGE_TOKEN;
+
+  if (!pageId || !pageToken) {
     return json(
       {
         ok: false,
-        error: "FACEBOOK_PAGE_ID o FACEBOOK_PAGE_TOKEN no configurados.",
+        error:
+          "FB_PAGE_ID/FB_PAGE_ACCESS_TOKEN o FACEBOOK_PAGE_ID/FACEBOOK_PAGE_TOKEN no configurados.",
       },
       { status: 500 }
     );
   }
 
   try {
-    return await publishFacebookTestPost(env.FACEBOOK_PAGE_ID, env.FACEBOOK_PAGE_TOKEN);
+    return await publishFacebookTestPost(pageId, pageToken);
   } catch (error) {
     return json(
       {
