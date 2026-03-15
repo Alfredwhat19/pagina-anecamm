@@ -336,6 +336,7 @@ const maybeDownloadCertificate = (sessionId) => {
   let attempts = 0;
   const maxAttempts = 8;
   const waitMs = 2000;
+  const initialWaitMs = 3500;
 
   const run = async () => {
     try {
@@ -378,7 +379,7 @@ const maybeDownloadCertificate = (sessionId) => {
     }
   };
 
-  run();
+  setTimeout(run, initialWaitMs);
 };
 
 const createTextCell = (value) => {
