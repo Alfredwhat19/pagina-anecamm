@@ -84,9 +84,9 @@ const createPdfRenderContainer = (html) => {
 
   const renderRoot = document.createElement("div");
   renderRoot.setAttribute("aria-hidden", "true");
-  renderRoot.style.position = "absolute";
-  renderRoot.style.top = "-10000px";
-  renderRoot.style.left = "-10000px";
+  renderRoot.style.position = "fixed";
+  renderRoot.style.top = "0";
+  renderRoot.style.left = "0";
   renderRoot.style.width = "8.5in";
   renderRoot.style.maxWidth = "8.5in";
   renderRoot.style.minHeight = "11in";
@@ -136,21 +136,35 @@ const downloadPdfFile = async (filename, html) => {
 
   try {
     await new Promise((resolve) => requestAnimationFrame(resolve));
-    await new Promise((resolve) => setTimeout(resolve, 3000));
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+    await new Promise((resolve) => setTimeout(resolve, 500));
     if (document.fonts?.ready) {
       await document.fonts.ready;
     }
     console.info("[cert-pdf] iniciando generacion de PDF", { filename });
     await Promise.all(
-      Array.from(renderRoot.querySelectorAll("img"))
-        .filter((img) => !img.complete)
-        .map(
-          (img) =>
-            new Promise((resolve) => {
-              img.onload = resolve;
-              img.onerror = resolve;
-            })
-        )
+      Array.from(renderRoot.querySelectorAll("img")).map(
+        (img) =>
+          new Promise((resolve) => {
+            if (img.complete) {
+              if (typeof img.decode === "function") {
+                img.decode().catch(() => {}).finally(resolve);
+              } else {
+                resolve();
+              }
+              return;
+            }
+
+            img.onload = () => {
+              if (typeof img.decode === "function") {
+                img.decode().catch(() => {}).finally(resolve);
+              } else {
+                resolve();
+              }
+            };
+            img.onerror = resolve;
+          })
+      )
     );
 
     const pdfTarget = renderRoot._pdfContent || renderRoot;
