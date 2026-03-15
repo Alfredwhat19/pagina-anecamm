@@ -214,6 +214,21 @@ const fetchCertificateData = async (sessionId) => {
   return { response, payload };
 };
 
+const waitForPageResources = async () => {
+  if (document.readyState !== "complete") {
+    await new Promise((resolve) =>
+      window.addEventListener("load", resolve, { once: true })
+    );
+  }
+
+  if (document.fonts?.ready) {
+    await document.fonts.ready;
+  }
+
+  await new Promise((resolve) => requestAnimationFrame(resolve));
+  await new Promise((resolve) => setTimeout(resolve, 300));
+};
+
 const buildCertificateHtml = async (data) => {
   const createdAt = parsePaidAt(data.paid_at);
   if (!createdAt) {
@@ -352,11 +367,12 @@ const maybeDownloadCertificate = (sessionId) => {
   const waitMs = 2000;
   const initialWaitMs = 3500;
 
-  const run = async () => {
-    try {
-      console.info("[cert-pdf] intentando descarga de certificado", {
-        sessionId,
-        attempt: attempts + 1,
+    const run = async () => {
+      try {
+        await waitForPageResources();
+        console.info("[cert-pdf] intentando descarga de certificado", {
+          sessionId,
+          attempt: attempts + 1,
         maxAttempts: maxAttempts + 1,
       });
       const result = await attemptCertificateDownload(sessionId);
