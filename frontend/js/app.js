@@ -155,12 +155,12 @@ const createPdfRenderFrame = async (html) => {
 };
 
 const downloadPdfFile = async (filename, html) => {
-  if (typeof window.html2pdf !== "function") {
-    console.error("[cert-pdf] html2pdf no esta disponible");
+  if (typeof window.html2canvas !== "function" || !window.jspdf?.jsPDF) {
+    console.error("[cert-pdf] html2canvas o jsPDF no estan disponibles");
     throw new Error("La libreria para generar PDF no esta disponible.");
   }
 
-  console.info("[cert-pdf] html2pdf disponible");
+  console.info("[cert-pdf] html2canvas/jsPDF disponibles");
   await preloadCertificateAssets(html);
   const renderFrame = await createPdfRenderFrame(html);
   const renderDoc = renderFrame.contentDocument;
@@ -204,32 +204,33 @@ const downloadPdfFile = async (filename, html) => {
 
     const targetWidth = Math.ceil(pdfTarget.scrollWidth || pdfTarget.offsetWidth || 0);
     const targetHeight = Math.ceil(pdfTarget.scrollHeight || pdfTarget.offsetHeight || 0);
+    const canvas = await window.html2canvas(pdfTarget, {
+      scale: 2,
+      useCORS: true,
+      backgroundColor: "#ffffff",
+      windowWidth: targetWidth || 816,
+      windowHeight: targetHeight || 1056,
+      scrollX: 0,
+      scrollY: 0,
+    });
 
-    await window
-      .html2pdf()
-      .set({
-        margin: 0,
-        filename,
-        image: { type: "jpeg", quality: 0.98 },
-        html2canvas: {
-          scale: 2,
-          useCORS: true,
-          backgroundColor: "#ffffff",
-          windowWidth: targetWidth || 816,
-          windowHeight: targetHeight || 1056,
-          scrollX: 0,
-          scrollY: 0,
-        },
-        jsPDF: {
-          unit: "in",
-          format: "letter",
-          orientation: "portrait",
-        },
-      })
-      .from(pdfTarget)
-      .save();
+    const imageData = canvas.toDataURL("image/png");
+    const pdf = new window.jspdf.jsPDF({
+      orientation: "portrait",
+      unit: "pt",
+      format: "letter",
+    });
 
-    console.info("[cert-pdf] .save() ejecutado", { filename });
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const pageHeight = pdf.internal.pageSize.getHeight();
+    pdf.addImage(imageData, "PNG", 0, 0, pageWidth, pageHeight);
+    pdf.save(filename);
+
+    console.info("[cert-pdf] PDF de una sola pagina generado", {
+      filename,
+      targetWidth,
+      targetHeight,
+    });
   } catch (error) {
     console.error("[cert-pdf] error al generar o descargar el PDF", error);
     throw error;
