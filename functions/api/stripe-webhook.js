@@ -161,7 +161,6 @@ const getClubById = async (db, id) => {
         `SELECT
           id,
           nombre_club,
-          instructor,
           payment_status,
           estatus,
           visible_in_directory,
@@ -193,7 +192,6 @@ const getClubByCheckoutSession = async (db, sessionId, clientReferenceId) => {
         `SELECT
           id,
           nombre_club,
-          instructor,
           stripe_session_id,
           stripe_subscription_id,
           stripe_customer_id,
@@ -226,7 +224,6 @@ const getClubBySubscriptionOrCustomer = async (db, subscriptionId, customerId, c
         `SELECT
           id,
           nombre_club,
-          instructor,
           payment_status,
           estatus,
           visible_in_directory,
@@ -263,7 +260,6 @@ const getClubBySubscriptionOrCustomer = async (db, subscriptionId, customerId, c
         `SELECT
           id,
           nombre_club,
-          instructor,
           payment_status,
           estatus,
           visible_in_directory,
@@ -378,25 +374,17 @@ const arrayBufferToBase64 = (arrayBuffer) => {
   return btoa(binary);
 };
 
-const buildInlineImageSrc = (image) =>
-  `data:${image.contentType};base64,${arrayBufferToBase64(image.arrayBuffer)}`;
-
-const buildWelcomeEmailHtml = (club, logoImage, groupImage) => `
+const buildWelcomeEmailHtml = (club) => `
   <div style="font-family: Arial, sans-serif; color: #172033; line-height: 1.6;">
     <h2 style="margin: 0 0 12px; color: #18315c;">Nueva afiliacion ANECAMM</h2>
-    <p style="margin: 0 0 12px;">
-      <strong>Club:</strong> ${club.nombre_club}
-    </p>
-    <p style="margin: 0 0 12px;">
-      <strong>Head Coach:</strong> ${club.instructor || "No especificado"}
-    </p>
+    <p style="margin: 0 0 12px;">${club.nombre_club} se integro como miembro activo de ANECAMM.</p>
     <p style="margin: 0 0 18px;">
       Bienvenidos. Que esta nueva etapa llegue con disciplina, crecimiento y muchos logros para todo el equipo.
     </p>
     <p style="margin: 0 0 8px; font-weight: 700;">Logo del club</p>
-    <img src="${buildInlineImageSrc(logoImage)}" alt="Logo del club" style="display: block; max-width: 220px; width: 100%; height: auto; margin-bottom: 18px;" />
+    <img src="cid:logo-image" alt="Logo del club" style="display: block; max-width: 220px; width: 100%; height: auto; margin-bottom: 18px;" />
     <p style="margin: 0 0 8px; font-weight: 700;">Foto grupal</p>
-    <img src="${buildInlineImageSrc(groupImage)}" alt="Foto grupal" style="display: block; max-width: 420px; width: 100%; height: auto;" />
+    <img src="cid:group-image" alt="Foto grupal" style="display: block; max-width: 420px; width: 100%; height: auto;" />
   </div>
 `;
 
@@ -404,8 +392,7 @@ const buildWelcomeEmailText = (club) =>
   [
     "Nueva afiliacion ANECAMM",
     "",
-    `Club: ${club.nombre_club}`,
-    `Head Coach: ${club.instructor || "No especificado"}`,
+    `${club.nombre_club} se integro como miembro activo de ANECAMM.`,
     "Bienvenidos. Que esta nueva etapa llegue con disciplina, crecimiento y muchos logros para todo el equipo.",
     "",
     "Se adjuntan el logo del club y la foto grupal.",
@@ -441,18 +428,20 @@ const sendWelcomeEmail = async (env, club) => {
         from: env.RESEND_FROM_EMAIL,
         to: [WELCOME_EMAIL_TO],
         subject: `Nueva afiliacion ANECAMM: ${club.nombre_club}`,
-        html: buildWelcomeEmailHtml(club, logoImage, groupImage),
+        html: buildWelcomeEmailHtml(club),
         text: buildWelcomeEmailText(club),
         attachments: [
           {
             content: arrayBufferToBase64(logoImage.arrayBuffer),
             filename: logoImage.filename,
             content_type: logoImage.contentType,
+            contentId: "logo-image",
           },
           {
             content: arrayBufferToBase64(groupImage.arrayBuffer),
             filename: groupImage.filename,
             content_type: groupImage.contentType,
+            contentId: "group-image",
           },
         ],
       }),
