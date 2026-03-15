@@ -80,7 +80,7 @@ const preloadCertificateAssets = async (html) => {
   );
 };
 
-const createPdfRenderContainer = (html) => {
+const createPdfRenderFrame = async (html) => {
   const parser = new DOMParser();
   const parsed = parser.parseFromString(html, "text/html");
   const styles = Array.from(parsed.querySelectorAll("style"))
@@ -111,47 +111,47 @@ const createPdfRenderContainer = (html) => {
     }
   `;
 
-  const renderRoot = document.createElement("div");
-  renderRoot.setAttribute("aria-hidden", "true");
-  renderRoot.style.position = "fixed";
-  renderRoot.style.top = "0";
-  renderRoot.style.left = "0";
-  renderRoot.style.width = "8.5in";
-  renderRoot.style.maxWidth = "8.5in";
-  renderRoot.style.minHeight = "11in";
-  renderRoot.style.height = "auto";
-  renderRoot.style.background = "#ffffff";
-  renderRoot.style.zIndex = "-1";
-  renderRoot.style.opacity = "1";
-  renderRoot.style.pointerEvents = "none";
-  renderRoot.style.transform = "none";
-  renderRoot.style.visibility = "visible";
-  renderRoot.style.display = "block";
-  renderRoot.style.overflow = "visible";
+  const frame = document.createElement("iframe");
+  frame.setAttribute("aria-hidden", "true");
+  frame.style.position = "fixed";
+  frame.style.top = "0";
+  frame.style.left = "-200vw";
+  frame.style.width = "8.5in";
+  frame.style.height = "11in";
+  frame.style.border = "0";
+  frame.style.pointerEvents = "none";
+  frame.style.visibility = "hidden";
 
-  const styleTag = document.createElement("style");
-  styleTag.textContent = `${styles}\n${pdfOverrides}`;
+  document.body.appendChild(frame);
 
-  const content = parsed.body;
-  const wrapper = document.createElement("div");
-  wrapper.className = "pdf-content";
-  wrapper.style.width = "8.5in";
-  wrapper.style.maxWidth = "8.5in";
-  wrapper.style.minHeight = "11in";
-  wrapper.style.background = "#ffffff";
-  wrapper.style.overflow = "visible";
-  renderRoot._pdfContent = wrapper;
-  wrapper.innerHTML = content.innerHTML;
+  const frameDoc = frame.contentDocument;
+  const baseHref = new URL(".", window.location.href).href;
+  const head = parsed.head || parsed.createElement("head");
+  const base = parsed.createElement("base");
+  base.setAttribute("href", baseHref);
+  head.prepend(base);
 
-  renderRoot.appendChild(styleTag);
-  renderRoot.appendChild(wrapper);
+  const injectedStyle = parsed.createElement("style");
+  injectedStyle.textContent = `${styles}\n${pdfOverrides}`;
+  head.appendChild(injectedStyle);
 
-  document.body.appendChild(renderRoot);
-  console.log("[cert-pdf] contenido insertado", renderRoot.innerHTML.length);
-  console.info("[cert-pdf] renderRoot creado y agregado al DOM", {
-    childCount: renderRoot.childNodes.length,
+  if (!parsed.head) {
+    parsed.documentElement.prepend(head);
+  }
+
+  frameDoc.open();
+  frameDoc.write(`<!doctype html>${parsed.documentElement.outerHTML}`);
+  frameDoc.close();
+
+  await new Promise((resolve) => {
+    if (frame.contentWindow?.document?.readyState === "complete") {
+      resolve();
+      return;
+    }
+    frame.addEventListener("load", resolve, { once: true });
   });
-  return renderRoot;
+
+  return frame;
 };
 
 const downloadPdfFile = async (filename, html) => {
@@ -162,18 +162,23 @@ const downloadPdfFile = async (filename, html) => {
 
   console.info("[cert-pdf] html2pdf disponible");
   await preloadCertificateAssets(html);
-  const renderRoot = createPdfRenderContainer(html);
+  const renderFrame = await createPdfRenderFrame(html);
+  const renderDoc = renderFrame.contentDocument;
+  const pdfTarget =
+    renderDoc.querySelector(".certificate-page") ||
+    renderDoc.querySelector("main") ||
+    renderDoc.body;
 
   try {
     await new Promise((resolve) => requestAnimationFrame(resolve));
     await new Promise((resolve) => requestAnimationFrame(resolve));
     await new Promise((resolve) => setTimeout(resolve, 500));
-    if (document.fonts?.ready) {
-      await document.fonts.ready;
+    if (renderDoc.fonts?.ready) {
+      await renderDoc.fonts.ready;
     }
     console.info("[cert-pdf] iniciando generacion de PDF", { filename });
     await Promise.all(
-      Array.from(renderRoot.querySelectorAll("img")).map(
+      Array.from(renderDoc.querySelectorAll("img")).map(
         (img) =>
           new Promise((resolve) => {
             if (img.complete) {
@@ -197,7 +202,6 @@ const downloadPdfFile = async (filename, html) => {
       )
     );
 
-    const pdfTarget = renderRoot._pdfContent || renderRoot;
     const targetWidth = Math.ceil(pdfTarget.scrollWidth || pdfTarget.offsetWidth || 0);
     const targetHeight = Math.ceil(pdfTarget.scrollHeight || pdfTarget.offsetHeight || 0);
 
@@ -230,8 +234,8 @@ const downloadPdfFile = async (filename, html) => {
     console.error("[cert-pdf] error al generar o descargar el PDF", error);
     throw error;
   } finally {
-    renderRoot.remove();
-    console.info("[cert-pdf] renderRoot removido del DOM");
+    renderFrame.remove();
+    console.info("[cert-pdf] renderFrame removido del DOM");
   }
 };
 
