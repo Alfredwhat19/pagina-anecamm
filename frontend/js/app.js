@@ -51,6 +51,35 @@ const applyTemplateReplacements = (template, replacements) =>
     template
   );
 
+const preloadCertificateAssets = async (html) => {
+  const parser = new DOMParser();
+  const parsed = parser.parseFromString(html, "text/html");
+  const imageUrls = Array.from(parsed.querySelectorAll("img"))
+    .map((img) => img.getAttribute("src"))
+    .filter(Boolean);
+
+  await Promise.all(
+    imageUrls.map(
+      (src) =>
+        new Promise((resolve) => {
+          const image = new Image();
+          image.decoding = "sync";
+          image.loading = "eager";
+          image.onload = resolve;
+          image.onerror = resolve;
+          image.src = src;
+          if (image.complete) {
+            if (typeof image.decode === "function") {
+              image.decode().catch(() => {}).finally(resolve);
+            } else {
+              resolve();
+            }
+          }
+        })
+    )
+  );
+};
+
 const createPdfRenderContainer = (html) => {
   const parser = new DOMParser();
   const parsed = parser.parseFromString(html, "text/html");
@@ -132,6 +161,7 @@ const downloadPdfFile = async (filename, html) => {
   }
 
   console.info("[cert-pdf] html2pdf disponible");
+  await preloadCertificateAssets(html);
   const renderRoot = createPdfRenderContainer(html);
 
   try {
