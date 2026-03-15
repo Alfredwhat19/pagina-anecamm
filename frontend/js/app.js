@@ -136,7 +136,7 @@ const downloadPdfFile = async (filename, html) => {
 
   try {
     await new Promise((resolve) => requestAnimationFrame(resolve));
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    await new Promise((resolve) => setTimeout(resolve, 3000));
     if (document.fonts?.ready) {
       await document.fonts.ready;
     }
