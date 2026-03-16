@@ -136,7 +136,7 @@ const createStripeCheckoutSession = async (secretKey, club) => {
     "line_items[0][price_data][currency]": "mxn",
     "line_items[0][price_data][product_data][name]":
       `Afiliacion ANECAMM - ${club.nombre_club}`,
-    "line_items[0][price_data][unit_amount]": "1500",
+    "line_items[0][price_data][unit_amount]": "101600",
     "line_items[0][price_data][recurring][interval]": "year",
     "line_items[0][quantity]": "1",
     "metadata[nombre_club]": club.nombre_club,
