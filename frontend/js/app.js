@@ -10,6 +10,7 @@ const adminCertificateBtn = document.getElementById("adminCertificateBtn");
 const adminLogoutBtn = document.getElementById("adminLogoutBtn");
 const adminStatusMsg = document.getElementById("adminStatusMsg");
 const directoryBody = document.getElementById("directoryBody");
+const directoryCertificateHeader = document.getElementById("directoryCertificateHeader");
 const statusMsg = document.getElementById("statusMsg");
 const clearBtn = document.getElementById("clearData");
 const directorySearch = document.getElementById("directorySearch");
@@ -29,6 +30,7 @@ let isSubmittingCheckout = false;
 let latestAdminRecord = null;
 let latestAdminFingerprint = "";
 let isSubmittingAdmin = false;
+let isAdminAuthenticated = false;
 
 const showMessage = (element, message, isError = false) => {
   if (!element) return;
@@ -510,6 +512,7 @@ const setAdminPanelOpen = (isOpen) => {
 };
 
 const setAdminAuthenticated = (isAuthenticated) => {
+  isAdminAuthenticated = isAuthenticated;
   if (!adminLoginForm || !adminWorkspace) return;
   adminLoginForm.hidden = isAuthenticated;
   adminWorkspace.hidden = !isAuthenticated;
@@ -562,15 +565,15 @@ const upsertDirectoryEntry = (club) => {
 };
 
 const syncAdminSession = async () => {
-  if (!adminPanel) return;
-
   try {
     const response = await fetch("/api/admin-session", { cache: "no-store" });
     const payload = await response.json().catch(() => ({}));
     setAdminAuthenticated(Boolean(payload?.authenticated));
+    renderDirectory();
   } catch (error) {
     console.error(error);
     setAdminAuthenticated(false);
+    renderDirectory();
   }
 };
 
@@ -631,6 +634,27 @@ const sendManualCertificateEmail = async (club, pdfBlob) => {
   }
 
   return result.data;
+};
+
+const fetchAdminCertificateData = async (clubId) => {
+  const response = await fetch(
+    `/api/admin-certificado?club_id=${encodeURIComponent(clubId)}`,
+    { cache: "no-store" }
+  );
+  const payload = await response.json().catch(() => ({}));
+
+  if (!response.ok || !payload?.ok || !payload?.data) {
+    throw new Error(payload?.error || "No se pudo obtener el certificado.");
+  }
+
+  return payload.data;
+};
+
+const downloadCertificateForClub = async (clubId) => {
+  const certificateData = await fetchAdminCertificateData(clubId);
+  const html = await buildCertificateHtml(certificateData);
+  const filename = `afiliacion-${certificateData.id}.pdf`;
+  await downloadPdfFile(filename, html);
 };
 
 const handleAdminLogin = async () => {
@@ -773,6 +797,31 @@ const createSocialCell = (value) => {
   return cell;
 };
 
+const createCertificateCell = (club) => {
+  const cell = document.createElement("td");
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "btn ghost directory-cert-btn";
+  button.textContent = "Descargar";
+  button.addEventListener("click", async () => {
+    button.disabled = true;
+    const previousLabel = button.textContent;
+    button.textContent = "Generando...";
+
+    try {
+      await downloadCertificateForClub(club.id);
+    } catch (error) {
+      console.error(error);
+      showStatus(error.message || "No se pudo descargar el certificado.", true);
+    } finally {
+      button.disabled = false;
+      button.textContent = previousLabel;
+    }
+  });
+  cell.appendChild(button);
+  return cell;
+};
+
 const createDirectoryRow = (club) => {
   const row = document.createElement("tr");
   row.appendChild(createTextCell(club.nombre_club || ""));
@@ -781,6 +830,9 @@ const createDirectoryRow = (club) => {
   row.appendChild(createTextCell("-"));
   row.appendChild(createSocialCell(club.red_social));
   row.appendChild(createTextCell(club.estatus || ""));
+  if (isAdminAuthenticated) {
+    row.appendChild(createCertificateCell(club));
+  }
   return row;
 };
 
@@ -789,7 +841,7 @@ const renderDirectoryMessage = (message) => {
 
   const row = document.createElement("tr");
   const cell = document.createElement("td");
-  cell.colSpan = 6;
+  cell.colSpan = isAdminAuthenticated ? 7 : 6;
   cell.textContent = message;
   row.appendChild(cell);
   directoryBody.replaceChildren(row);
@@ -816,6 +868,9 @@ const filterClubs = (clubs, query) => {
 
 const renderDirectory = () => {
   if (!directoryBody) return;
+  if (directoryCertificateHeader) {
+    directoryCertificateHeader.hidden = !isAdminAuthenticated;
+  }
 
   const clubs = filterClubs(directoryData, directoryQuery);
   if (!clubs.length) {
