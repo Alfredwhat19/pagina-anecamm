@@ -535,6 +535,11 @@ h4 {
   padding-left: 1rem;
 }
 
+.admin-entry-btn {
+  width: 100%;
+  margin-top: 0.85rem;
+}
+
 .form-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(220px, 1fr));
@@ -619,6 +624,44 @@ input:focus {
 
 .status.error {
   color: #af1717;
+}
+
+.admin-panel {
+  margin-top: 1rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.99), rgba(244, 247, 250, 0.98));
+  padding: 1rem;
+}
+
+.admin-login-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(180px, 1fr));
+  gap: 0.8rem;
+  align-items: end;
+}
+
+.admin-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: end;
+  gap: 1rem;
+  margin-bottom: 0.8rem;
+}
+
+.admin-head h4 {
+  margin-bottom: 0;
+}
+
+.admin-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.7rem;
+}
+
+.admin-actions .btn {
+  flex: 1 1 260px;
 }
 
 .directory-head {
@@ -708,6 +751,7 @@ a {
   .special-card,
   .afiliacion-layout,
   .event-highlight,
+  .admin-login-grid,
   .form-grid,
   .pay-box,
   .contact-inline {

@@ -30,6 +30,9 @@
             <li>Registro digital de datos del club.</li>
             <li>Proceso sencillo desde cualquier dispositivo.</li>
           </ul>
+          <button type="button" id="adminToggleBtn" class="btn ghost admin-entry-btn">
+            Administrador
+          </button>
         </aside>
 
         <form id="clubForm" class="form-grid">
@@ -63,6 +66,64 @@
       </div>
 
       <p id="statusMsg" class="status" aria-live="polite"></p>
+
+      <section id="adminPanel" class="admin-panel" hidden>
+        <div class="section-head compact">
+          <p class="tag">Acceso interno</p>
+          <h3>Administrador</h3>
+        </div>
+
+        <form id="adminLoginForm" class="admin-login-grid" autocomplete="off">
+          <label>Usuario
+            <input type="text" name="username" placeholder="Admin" required />
+          </label>
+          <label>Contraseña
+            <input type="password" name="password" placeholder="••••••••" required />
+          </label>
+          <button type="submit" class="btn">Iniciar sesión</button>
+        </form>
+
+        <div id="adminWorkspace" hidden>
+          <div class="admin-head">
+            <div>
+              <p class="tag">Alta manual</p>
+              <h4>Registro manual de clubes</h4>
+            </div>
+            <button type="button" id="adminLogoutBtn" class="btn ghost">Cerrar sesión</button>
+          </div>
+
+          <form id="adminClubForm" class="form-grid">
+            <div class="step-title">Paso 1. Datos del club</div>
+
+            <label>Nombre del club
+              <input type="text" name="club" required />
+            </label>
+            <label>Direccion del club
+              <input type="text" name="direccion" required />
+            </label>
+            <label>Ciudad y estado
+              <input type="text" name="ciudadEstado" required />
+            </label>
+            <label>Nombre del instructor
+              <input type="text" name="instructor" required />
+            </label>
+            <label>Red social
+              <input type="url" name="redSocial" placeholder="https://..." />
+            </label>
+
+            <div class="admin-actions">
+              <button type="button" id="adminSaveBtn" class="btn ghost">
+                Guardar
+              </button>
+              <button type="button" id="adminCertificateBtn" class="btn">
+                Guardar certificado y enviar al correo
+              </button>
+            </div>
+          </form>
+        </div>
+
+        <p id="adminStatusMsg" class="status" aria-live="polite"></p>
+      </section>
     </section>
   </main>
 

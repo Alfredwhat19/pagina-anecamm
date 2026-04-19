@@ -1,5 +1,14 @@
 ﻿const STORAGE_KEY = "anecamm_clubes";
 const form = document.getElementById("clubForm");
+const adminPanel = document.getElementById("adminPanel");
+const adminToggleBtn = document.getElementById("adminToggleBtn");
+const adminLoginForm = document.getElementById("adminLoginForm");
+const adminWorkspace = document.getElementById("adminWorkspace");
+const adminClubForm = document.getElementById("adminClubForm");
+const adminSaveBtn = document.getElementById("adminSaveBtn");
+const adminCertificateBtn = document.getElementById("adminCertificateBtn");
+const adminLogoutBtn = document.getElementById("adminLogoutBtn");
+const adminStatusMsg = document.getElementById("adminStatusMsg");
 const directoryBody = document.getElementById("directoryBody");
 const statusMsg = document.getElementById("statusMsg");
 const clearBtn = document.getElementById("clearData");
@@ -17,11 +26,22 @@ const CERT_SIGNED_BY = "Firmado por ANECAMM por Arjan Oliver Guerrero Díaz";
 let directoryQuery = "";
 let directoryData = [];
 let isSubmittingCheckout = false;
+let latestAdminRecord = null;
+let latestAdminFingerprint = "";
+let isSubmittingAdmin = false;
+
+const showMessage = (element, message, isError = false) => {
+  if (!element) return;
+  element.textContent = message;
+  element.classList.toggle("error", isError);
+};
 
 const showStatus = (message, isError = false) => {
-  if (!statusMsg) return;
-  statusMsg.textContent = message;
-  statusMsg.classList.toggle("error", isError);
+  showMessage(statusMsg, message, isError);
+};
+
+const showAdminStatus = (message, isError = false) => {
+  showMessage(adminStatusMsg, message, isError);
 };
 
 const parsePaidAt = (paidAt) => {
@@ -44,6 +64,17 @@ const buildDocumentId = (clubId, createdAt) => {
   const datePart = createdAt.toISOString().slice(0, 10).replace(/-/g, "");
   return `ANECAMM-${clubId}-${datePart}`;
 };
+
+const normalizeAdminPayload = (payload) => ({
+  nombre_club: String(payload?.nombre_club || "").trim(),
+  direccion: String(payload?.direccion || "").trim(),
+  ciudad_estado: String(payload?.ciudad_estado || "").trim(),
+  instructor: String(payload?.instructor || "").trim(),
+  red_social: String(payload?.red_social || "").trim(),
+});
+
+const buildAdminFingerprint = (payload) =>
+  JSON.stringify(normalizeAdminPayload(payload));
 
 const applyTemplateReplacements = (template, replacements) =>
   Object.entries(replacements).reduce(
@@ -154,7 +185,7 @@ const createPdfRenderFrame = async (html) => {
   return frame;
 };
 
-const downloadPdfFile = async (filename, html) => {
+const buildCertificatePdfBlob = async (html) => {
   if (typeof window.html2canvas !== "function" || !window.jspdf?.jsPDF) {
     console.error("[cert-pdf] html2canvas o jsPDF no estan disponibles");
     throw new Error("La libreria para generar PDF no esta disponible.");
@@ -224,13 +255,11 @@ const downloadPdfFile = async (filename, html) => {
     const pageWidth = pdf.internal.pageSize.getWidth();
     const pageHeight = pdf.internal.pageSize.getHeight();
     pdf.addImage(imageData, "PNG", 0, 0, pageWidth, pageHeight);
-    pdf.save(filename);
-
     console.info("[cert-pdf] PDF de una sola pagina generado", {
-      filename,
       targetWidth,
       targetHeight,
     });
+    return pdf.output("blob");
   } catch (error) {
     console.error("[cert-pdf] error al generar o descargar el PDF", error);
     throw error;
@@ -238,6 +267,34 @@ const downloadPdfFile = async (filename, html) => {
     renderFrame.remove();
     console.info("[cert-pdf] renderFrame removido del DOM");
   }
+};
+
+const savePdfBlob = (filename, blob) => {
+  const blobUrl = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = blobUrl;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+};
+
+const blobToBase64 = async (blob) =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const result = String(reader.result || "");
+      resolve(result.replace(/^data:application\/pdf;base64,/, ""));
+    };
+    reader.onerror = () => reject(reader.error || new Error("No se pudo leer el PDF."));
+    reader.readAsDataURL(blob);
+  });
+
+const downloadPdfFile = async (filename, html) => {
+  const pdfBlob = await buildCertificatePdfBlob(html);
+  savePdfBlob(filename, pdfBlob);
+  return pdfBlob;
 };
 
 const fetchCertificateData = async (sessionId) => {
@@ -445,6 +502,235 @@ const maybeDownloadCertificate = (sessionId) => {
   };
 
   setTimeout(run, initialWaitMs);
+};
+
+const setAdminPanelOpen = (isOpen) => {
+  if (!adminPanel) return;
+  adminPanel.hidden = !isOpen;
+};
+
+const setAdminAuthenticated = (isAuthenticated) => {
+  if (!adminLoginForm || !adminWorkspace) return;
+  adminLoginForm.hidden = isAuthenticated;
+  adminWorkspace.hidden = !isAuthenticated;
+
+  if (!isAuthenticated) {
+    latestAdminRecord = null;
+    latestAdminFingerprint = "";
+  }
+};
+
+const getClubPayloadFromForm = (formElement) => {
+  const fd = new FormData(formElement);
+  return {
+    nombre_club: (fd.get("club") || "").toString().trim(),
+    direccion: (fd.get("direccion") || "").toString().trim(),
+    ciudad_estado: (fd.get("ciudadEstado") || "").toString().trim(),
+    instructor: (fd.get("instructor") || "").toString().trim(),
+    red_social: (fd.get("redSocial") || "").toString().trim(),
+  };
+};
+
+const validateClubPayload = (payload) => {
+  if (
+    !payload.nombre_club ||
+    !payload.direccion ||
+    !payload.ciudad_estado ||
+    !payload.instructor
+  ) {
+    throw new Error("Completa los datos obligatorios del club.");
+  }
+};
+
+const upsertDirectoryEntry = (club) => {
+  if (!club?.id) return;
+
+  const normalizedEntry = {
+    id: club.id,
+    nombre_club: club.nombre_club || "",
+    ciudad_estado: club.ciudad_estado || "",
+    instructor: club.instructor || "",
+    red_social: club.red_social || "",
+    estatus: club.estatus || "ACTIVO",
+  };
+
+  const nextEntries = directoryData.filter((entry) => Number(entry.id) !== Number(club.id));
+  nextEntries.push(normalizedEntry);
+  nextEntries.sort((a, b) => String(a.nombre_club || "").localeCompare(String(b.nombre_club || ""), "es"));
+  directoryData = nextEntries;
+  renderDirectory();
+};
+
+const syncAdminSession = async () => {
+  if (!adminPanel) return;
+
+  try {
+    const response = await fetch("/api/admin-session", { cache: "no-store" });
+    const payload = await response.json().catch(() => ({}));
+    setAdminAuthenticated(Boolean(payload?.authenticated));
+  } catch (error) {
+    console.error(error);
+    setAdminAuthenticated(false);
+  }
+};
+
+const saveManualClubRecord = async ({ reuseIfUnchanged = false } = {}) => {
+  if (!adminClubForm) {
+    throw new Error("No se encontro el formulario administrativo.");
+  }
+
+  const payload = getClubPayloadFromForm(adminClubForm);
+  validateClubPayload(payload);
+  const fingerprint = buildAdminFingerprint(payload);
+
+  if (
+    reuseIfUnchanged &&
+    latestAdminRecord &&
+    latestAdminFingerprint === fingerprint
+  ) {
+    return { data: latestAdminRecord, reused: true };
+  }
+
+  const response = await fetch("/api/admin-clubes", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok || !result?.ok || !result?.data) {
+    throw new Error(result?.error || "No se pudo guardar el registro manual.");
+  }
+
+  latestAdminRecord = result.data;
+  latestAdminFingerprint = fingerprint;
+  upsertDirectoryEntry(result.data);
+  return { data: result.data, reused: false };
+};
+
+const sendManualCertificateEmail = async (club, pdfBlob) => {
+  const pdfBase64 = await blobToBase64(pdfBlob);
+  const filename = `afiliacion-${club.id}.pdf`;
+  const response = await fetch("/api/admin-send-certificate", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      club_id: club.id,
+      filename,
+      pdf_base64: pdfBase64,
+    }),
+  });
+
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok || !result?.ok) {
+    throw new Error(result?.error || "No se pudo enviar el certificado por correo.");
+  }
+
+  return result.data;
+};
+
+const handleAdminLogin = async () => {
+  if (!adminLoginForm) return;
+
+  const fd = new FormData(adminLoginForm);
+  const username = (fd.get("username") || "").toString().trim();
+  const password = (fd.get("password") || "").toString();
+
+  if (!username || !password) {
+    showAdminStatus("Ingresa usuario y contraseña.", true);
+    return;
+  }
+
+  showAdminStatus("Validando acceso...");
+
+  try {
+    const response = await fetch("/api/admin-login", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ username, password }),
+    });
+
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok || !result?.ok) {
+      throw new Error(result?.error || "No se pudo iniciar sesión.");
+    }
+
+    setAdminAuthenticated(true);
+    adminLoginForm.reset();
+    showAdminStatus("Sesión iniciada. Ya puedes registrar clubes manualmente.");
+  } catch (error) {
+    console.error(error);
+    showAdminStatus(error.message || "No se pudo iniciar sesión.", true);
+  }
+};
+
+const handleAdminLogout = async () => {
+  showAdminStatus("Cerrando sesión...");
+
+  try {
+    await fetch("/api/admin-session", {
+      method: "DELETE",
+    });
+  } catch (error) {
+    console.error(error);
+  }
+
+  setAdminAuthenticated(false);
+  if (adminClubForm) {
+    adminClubForm.reset();
+  }
+  showAdminStatus("Sesión cerrada.");
+};
+
+const handleAdminSave = async () => {
+  if (isSubmittingAdmin) return;
+  isSubmittingAdmin = true;
+  showAdminStatus("Guardando registro manual...");
+
+  try {
+    const { data, reused } = await saveManualClubRecord();
+    showAdminStatus(
+      reused
+        ? "Se reutilizó el registro manual actual."
+        : `Registro guardado. ${data.nombre_club} ya aparece en el directorio.`
+    );
+  } catch (error) {
+    console.error(error);
+    showAdminStatus(error.message || "No se pudo guardar el registro manual.", true);
+  } finally {
+    isSubmittingAdmin = false;
+  }
+};
+
+const handleAdminCertificate = async () => {
+  if (isSubmittingAdmin) return;
+  isSubmittingAdmin = true;
+  showAdminStatus("Guardando y generando certificado...");
+
+  try {
+    const { data } = await saveManualClubRecord({ reuseIfUnchanged: true });
+    const html = await buildCertificateHtml(data);
+    const filename = `afiliacion-${data.id}.pdf`;
+    const pdfBlob = await downloadPdfFile(filename, html);
+    const emailResult = await sendManualCertificateEmail(data, pdfBlob);
+    showAdminStatus(
+      `Certificado descargado y enviado al correo configurado (${emailResult.email_to}).`
+    );
+  } catch (error) {
+    console.error(error);
+    showAdminStatus(
+      error.message || "No se pudo descargar ni enviar el certificado.",
+      true
+    );
+  } finally {
+    isSubmittingAdmin = false;
+  }
 };
 
 const createTextCell = (value) => {
@@ -680,6 +966,35 @@ if (directorySearch) {
   });
 }
 
+if (adminToggleBtn) {
+  adminToggleBtn.addEventListener("click", () => {
+    const nextState = adminPanel?.hidden;
+    setAdminPanelOpen(Boolean(nextState));
+    if (nextState) {
+      showAdminStatus("");
+    }
+  });
+}
+
+if (adminLoginForm) {
+  adminLoginForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    handleAdminLogin();
+  });
+}
+
+if (adminSaveBtn) {
+  adminSaveBtn.addEventListener("click", handleAdminSave);
+}
+
+if (adminCertificateBtn) {
+  adminCertificateBtn.addEventListener("click", handleAdminCertificate);
+}
+
+if (adminLogoutBtn) {
+  adminLogoutBtn.addEventListener("click", handleAdminLogout);
+}
+
 const initCarousel = (carouselRoot) => {
   if (!carouselRoot) return;
 
@@ -855,6 +1170,7 @@ const initActiveNav = () => {
 document.addEventListener("DOMContentLoaded", () => {
   showCheckoutStateFromUrl();
   cargarDirectorio();
+  syncAdminSession();
   initCarousels();
   initMenu();
   initActiveNav();
