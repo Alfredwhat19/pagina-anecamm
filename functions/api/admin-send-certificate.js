@@ -4,7 +4,7 @@ import {
 } from "./_admin-auth.js";
 
 const RESEND_API_URL = "https://api.resend.com/emails";
-const DEFAULT_CERTIFICATE_TO = "jose.star49@gmail.com";
+const DEFAULT_CERTIFICATE_TO = "oliver.guerrero@anecamm.com";
 
 const parseApiResponse = async (response) => {
   const rawText = await response.text();
