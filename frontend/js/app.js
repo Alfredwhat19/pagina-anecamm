@@ -207,7 +207,7 @@ const buildCertificatePdfBlob = async (html) => {
     if (renderDoc.fonts?.ready) {
       await renderDoc.fonts.ready;
     }
-    console.info("[cert-pdf] iniciando generacion de PDF", { filename });
+    console.info("[cert-pdf] iniciando generacion de PDF");
     await Promise.all(
       Array.from(renderDoc.querySelectorAll("img")).map(
         (img) =>
